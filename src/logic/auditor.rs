@@ -6,7 +6,7 @@
 //! - **Free Elective Detection**: Credits unmatched courses as free electives
 //! - **Greedy Matching**: Allows repeatable courses to accumulate credits
 
-use crate::models::{GenEdCurriculum, MajorCurriculum, ParsedCourse};
+use crate::models::{GenEdCurriculum, MajorCurriculum, MissingCourse, ParsedCourse};
 use leptos::logging;
 use std::collections::HashSet;
 
@@ -15,9 +15,9 @@ use std::collections::HashSet;
 pub fn audit_gen_ed(
     courses: &[ParsedCourse],
     curriculum: &GenEdCurriculum,
-) -> (f32, Vec<String>, HashSet<usize>) {
+) -> (f32, Vec<MissingCourse>, HashSet<usize>) {
     let mut completed_credits = 0.0;
-    let mut missing_courses = Vec::new();
+    let mut missing_courses: Vec<MissingCourse> = Vec::new();
     let mut used_indices = HashSet::new();
 
     for strand in &curriculum.strands {
@@ -85,7 +85,10 @@ pub fn audit_gen_ed(
                         course.credits
                     );
                 } else {
-                    missing_courses.push(format!("{} - {}", course.code, course.name));
+                    missing_courses.push(MissingCourse {
+                        category: "General Education".to_string(),
+                        description: format!("{} - {}", course.code, course.name),
+                    });
                 }
             }
         }
@@ -109,7 +112,10 @@ pub fn audit_gen_ed(
                             course.credits
                         );
                     } else {
-                        missing_courses.push(format!("{} - {}", course.code, course.name));
+                        missing_courses.push(MissingCourse {
+                            category: "General Education".to_string(),
+                            description: format!("{} - {}", course.code, course.name),
+                        });
                     }
                 }
             }
@@ -145,10 +151,10 @@ pub fn audit_gen_ed(
 pub fn audit_major(
     courses: &[ParsedCourse],
     curriculum: &MajorCurriculum,
-) -> (f32, f32, Vec<String>, HashSet<usize>) {
+) -> (f32, f32, Vec<MissingCourse>, HashSet<usize>) {
     let mut completed_credits = 0.0;
     let mut elective_credits = 0.0;
-    let mut missing_courses = Vec::new();
+    let mut missing_courses: Vec<MissingCourse> = Vec::new();
     let mut used_indices = HashSet::new();
 
     for course in &curriculum.basic_science.courses {
@@ -167,7 +173,10 @@ pub fn audit_major(
         } else if courses.iter().any(|c| c.code == course.code) {
             logging::log!("[AUDIT] Major Basic Science failed: {}", course.code);
         } else {
-            missing_courses.push(format!("{} - {}", course.code, course.name));
+            missing_courses.push(MissingCourse {
+                category: "Basic Science".to_string(),
+                description: format!("{} - {}", course.code, course.name),
+            });
         }
     }
 
@@ -187,7 +196,10 @@ pub fn audit_major(
         } else if courses.iter().any(|c| c.code == course.code) {
             logging::log!("[AUDIT] Major Core failed: {}", course.code);
         } else {
-            missing_courses.push(format!("{} - {}", course.code, course.name));
+            missing_courses.push(MissingCourse {
+                category: "Core Courses".to_string(),
+                description: format!("{} - {}", course.code, course.name),
+            });
         }
     }
 

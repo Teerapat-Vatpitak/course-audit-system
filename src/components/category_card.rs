@@ -21,107 +21,88 @@ pub fn CategoryCard(category: Category) -> impl IntoView {
     let category_clone = category.clone();
 
     view! {
-        <div class="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden hover:shadow-md transition-shadow duration-200">
+        <div class="border border-slate-100 rounded-xl overflow-hidden bg-white shadow-sm ring-1 ring-slate-900/5 transition-all duration-200 hover:shadow-md">
             <button
-                class="w-full px-6 py-4 flex justify-between items-center hover:bg-gray-50 transition-colors duration-150"
+                class="w-full px-5 py-4 flex justify-between items-center hover:bg-slate-50 transition-colors duration-200 text-left group"
                 on:click=move |_| set_is_expanded.update(|v| *v = !*v)
             >
-                <div class="flex-1 text-left">
-                    <h4 class="font-semibold text-gray-900 text-lg">{&category.name}</h4>
+                <div>
+                    <span class="text-sm font-semibold text-slate-800 group-hover:text-blue-600 transition-colors">{&category.name}</span>
                 </div>
                 <div class="flex items-center gap-4">
-                    <span class="text-sm text-gray-600 font-medium whitespace-nowrap">
-                        {format!("{:.1} / {:.1}", category.collected_credits, category.required_credits)}
-                    </span>
-                    <svg
-                        class={format!(
-                            "w-5 h-5 text-gray-400 transition-transform duration-200 {}",
-                            if is_expanded.get() { "transform rotate-180" } else { "" }
-                        )}
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                    >
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                    </svg>
+                    <div class="flex flex-col items-end">
+                        <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-0.5">"Credits"</span>
+                        <span class="text-xs font-semibold text-slate-700">
+                            {format!("{:.0} / {:.0}", category.collected_credits, category.required_credits)}
+                        </span>
+                    </div>
+                    <div class={format!("w-7 h-7 rounded-full flex items-center justify-center transition-colors {}", if is_expanded.get() { "bg-blue-50 text-blue-600" } else { "bg-slate-50 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-500" })}>
+                        <svg
+                            class={format!(
+                                "w-4 h-4 transition-transform duration-200 {}",
+                                if is_expanded.get() { "rotate-180" } else { "" }
+                            )}
+                            fill="none" stroke="currentColor" viewBox="0 0 24 24"
+                        >
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                    </div>
                 </div>
             </button>
 
-            <div class="px-6 py-3 bg-gray-50 border-t border-gray-100">
-                <div class="w-full bg-gray-200 rounded-full h-2">
+            <div class="px-5 pb-4">
+                <div class="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
                     <div
-                        class={format!("h-2 rounded-full transition-all {}",
-                            if percentage >= 100.0 { "bg-emerald-500" }
-                            else if percentage >= 75.0 { "bg-emerald-600" }
-                            else if percentage >= 50.0 { "bg-amber-500" }
-                            else { "bg-gray-400" }
+                        class={format!("h-full rounded-full transition-all duration-1000 ease-out {}",
+                            if percentage >= 100.0 { "bg-green-500" } else { "bg-blue-500" }
                         )}
                         style={format!("width: {}%", percentage)}
                     ></div>
-                </div>
-                <div class="flex justify-between items-center mt-2">
-                    <span class="text-xs text-gray-600 font-medium">
-                        {format!("{}%", (percentage as i32))}
-                    </span>
-                    {if percentage >= 100.0 {
-                        view! {
-                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">
-                                "✓ Complete"
-                            </span>
-                        }
-                    } else {
-                        view! {
-                            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800">
-                                "In Progress"
-                            </span>
-                        }
-                    }}
                 </div>
             </div>
 
             {move || {
                 if is_expanded.get() {
                     view! {
-                        <div class="px-6 py-4 border-t border-gray-100 space-y-3 max-h-[500px] overflow-y-auto">
+                        <div class="border-t border-slate-100 max-h-[400px] overflow-y-auto bg-slate-50/30">
                             {if category_clone.courses.is_empty() {
                                 view! {
-                                    <p class="text-sm text-gray-500 italic text-center py-4">
-                                        "No courses in this category"
-                                    </p>
+                                    <div class="flex flex-col items-center justify-center py-8">
+                                        <div class="w-10 h-10 rounded-full bg-slate-50 flex items-center justify-center mb-2 border border-slate-100">
+                                            <svg class="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4M12 20V4"></path></svg>
+                                        </div>
+                                        <p class="text-xs font-medium text-slate-400">"No courses completed"</p>
+                                    </div>
                                 }.into_view()
                             } else {
-                                category_clone.courses.iter().map(|course| {
-                                    let course = course.clone();
-                                    view! {
-                                        <div class="flex justify-between items-center gap-4 py-2 px-3 hover:bg-gray-50 rounded-lg transition-colors">
-                                            <div class="flex-1 min-w-0">
-                                                <div class="font-mono text-xs font-bold text-emerald-700 mb-1">
-                                                    {&course.code}
-                                                </div>
-                                                <div class="text-sm text-gray-700 truncate">
-                                                    {&course.name}
-                                                </div>
-                                            </div>
-                                            <div class="flex items-center gap-3 ml-4">
-                                                <span class="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-gray-100 text-gray-800 whitespace-nowrap">
-                                                    {&course.grade}
-                                                </span>
-                                                <div class="text-right">
-                                                    <div class="text-sm font-semibold text-gray-900">
-                                                        {format!("{} cr", course.credit)}
+                                view! {
+                                    <div class="divide-y divide-slate-100">
+                                        {category_clone.courses.iter().map(|course| {
+                                            let course = course.clone();
+                                            view! {
+                                                <div class="flex justify-between items-center px-5 py-3.5 hover:bg-slate-50 transition-colors group">
+                                                    <div class="flex-1 min-w-0 pr-4">
+                                                        <div class="flex items-center gap-2 mb-0.5">
+                                                            <span class="font-mono text-[10px] font-bold bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-md tracking-wider">{&course.code}</span>
+                                                        </div>
+                                                        <span class="text-sm font-medium text-slate-700 truncate block group-hover:text-slate-900 transition-colors">{&course.name}</span>
+                                                    </div>
+                                                    <div class="flex items-center gap-4 shrink-0">
+                                                        <div class="flex flex-col items-center justify-center w-8 h-8 rounded-lg bg-blue-50 text-blue-600 font-bold text-sm border border-blue-100/50">
+                                                            {&course.grade}
+                                                        </div>
+                                                        <span class="text-[11px] font-semibold text-slate-400 uppercase tracking-wider w-8 text-right">{format!("{} cr", course.credit)}</span>
                                                     </div>
                                                 </div>
-                                            </div>
-                                        </div>
-                                    }
-                                }).collect::<Vec<_>>().into_view()
+                                            }
+                                        }).collect::<Vec<_>>()}
+                                    </div>
+                                }.into_view()
                             }}
                         </div>
                     }.into_view()
                 } else {
-                    view! {
-                        <div></div>
-                    }.into_view()
+                    view! { <div></div> }.into_view()
                 }
             }}
         </div>

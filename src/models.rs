@@ -26,12 +26,19 @@ pub struct Category {
     pub courses: Vec<Course>,   // Courses in this category
 }
 
+/// A single missing required course, tagged with its curriculum category
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MissingCourse {
+    pub category: String,     // e.g. "General Education", "Major Courses"
+    pub description: String,  // e.g. "344-101 - Calculus I"
+}
+
 /// Final audit result containing all categories and missing requirements
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditResult {
-    pub total_credits: f32,            // Total credits earned
-    pub categories: Vec<Category>,     // All audit categories (GenEd, Major, Electives)
-    pub missing_subjects: Vec<String>, // List of required courses not yet completed
+    pub total_credits: f32,               // Total credits earned
+    pub categories: Vec<Category>,        // All audit categories (GenEd, Major, Electives)
+    pub missing_subjects: Vec<MissingCourse>, // Missing courses with their category
 }
 
 /// A single General Education course.

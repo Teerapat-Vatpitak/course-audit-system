@@ -27,7 +27,7 @@ use crate::logic::{
     auditor::{audit_gen_ed, audit_major, calculate_free_electives},
     parser::{extract_text_from_pdf, parse_transcript},
 };
-use crate::models::{AuditResult, Category, Course};
+use crate::models::{AuditResult, Category, Course, MissingCourse};
 
 fn main() {
     console_error_panic_hook::set_once();
@@ -198,8 +198,16 @@ fn App() -> impl IntoView {
                                                 free_elective_list
                                             );
 
-                                            let mut all_missing = gen_ed_missing;
+                                            let mut all_missing: Vec<MissingCourse> = gen_ed_missing;
                                             all_missing.extend(major_missing);
+
+                                            // Drop missing entries for categories that are already complete
+                                            let major_collected = major_credits + elective_credits;
+                                            all_missing.retain(|m| match m.category.as_str() {
+                                                "General Education" => gen_ed_credits < 30.0,
+                                                "Basic Science" | "Core Courses" => major_collected < 96.0,
+                                                _                   => true,
+                                            });
 
                                             let total_credits = gen_ed_credits
                                                 + major_credits
@@ -283,155 +291,232 @@ fn App() -> impl IntoView {
         <Stylesheet id="leptos" href="/pkg/course-audit-system.css"/>
         <Title text="Course Audit System"/>
 
-        <div class="min-h-screen bg-gray-50 py-12 px-6">
-            <div class="max-w-5xl mx-auto">
-                <h1 class="text-5xl font-semibold text-gray-900 mb-12 text-center tracking-tight">
-                    "Course Audit System"
-                </h1>
+        <div class="min-h-screen bg-slate-50 font-sans text-slate-900 flex flex-col">
+            // Top bar
+            <header class="bg-gradient-to-r from-[#002D62] to-blue-800 text-white px-8 py-4 flex items-baseline gap-4 shadow-md z-10 relative">
+                <div class="flex items-center gap-2">
+                    <h1 class="text-lg font-bold tracking-tight">"Course Audit"</h1>
+                </div>
+                <span class="text-blue-300 opacity-50">"|"</span>
+                <p class="text-sm text-blue-200 font-medium">"Computer Science"</p>
+            </header>
 
-                // Top Section - Upload
-                <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-8 mb-8">
-                    <h2 class="text-2xl font-semibold text-gray-900 mb-6">
-                        "Upload Transcript"
-                    </h2>
+            // Two-column body
+            <div class="flex h-[calc(100vh-60px)] p-6 gap-6 max-w-[1600px] w-full mx-auto">
 
-                    // Drag-and-drop zone
+                // Left column — Upload
+                <aside class="w-[380px] shrink-0 bg-white rounded-2xl shadow-xl shadow-slate-200/50 flex flex-col p-7 gap-6 border border-slate-100 overflow-hidden relative">
+                    <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-blue-400"></div>
+                    <div>
+                        <h2 class="text-lg font-semibold text-slate-800">"Upload Transcript"</h2>
+                        <p class="text-xs text-slate-500 mt-1">"Upload your unofficial PDF transcript"</p>
+                    </div>
+
+                    // Drop zone
                     <div
-                        class="bg-white border-2 border-dashed border-gray-300 rounded-xl p-12 text-center hover:border-emerald-500 hover:bg-emerald-50 transition-colors duration-200 cursor-pointer"
+                        class="group border-2 border-dashed border-slate-200 rounded-xl p-8 text-center hover:border-blue-400 hover:bg-blue-50/50 transition-all duration-300 cursor-pointer flex flex-col items-center justify-center gap-3 relative overflow-hidden"
                         on:dragover=on_drag_over
                         on:drop=on_drop
                     >
+                        <div class="w-12 h-12 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center group-hover:scale-110 transition-transform duration-300">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+                        </div>
                         <input
                             type="file"
                             accept="application/pdf"
-                            class="hidden"
+                            class="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                             id="file-input"
                             on:change=on_file_change
                         />
-                        <label
-                            for="file-input"
-                            class="cursor-pointer block"
-                        >
-                            <div>
-                                <svg class="mx-auto h-12 w-12 text-emerald-600 mb-4" stroke="currentColor" fill="none" viewBox="0 0 24 24" stroke-width="1.5">
-                                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                                </svg>
-                                <p class="text-base font-semibold text-gray-900 mb-1">"Drop your PDF transcript here"</p>
-                                <p class="text-sm text-gray-600">"or click to browse files"</p>
-                            </div>
+                        <label for="file-input" class="cursor-pointer block">
+                            <p class="text-sm font-medium text-slate-700 group-hover:text-blue-600 transition-colors">
+                                "Drag & drop your PDF here"
+                            </p>
+                            <p class="text-xs text-slate-400 mt-1">"or click to browse from your device"</p>
                         </label>
                     </div>
-
-                    // Display filename
-                    {move || (!file_name.get().is_empty()).then(|| view! {
-                        <div class="mt-6 p-4 bg-emerald-50 rounded-lg border border-emerald-200">
-                            <p class="text-sm text-gray-900">
-                                <span class="font-medium text-gray-600">"Selected file: "</span>
-                                <span class="font-semibold text-emerald-700">{file_name.get()}</span>
-                            </p>
-                        </div>
-                    })}
-
-                    // PDF Preview
+                    
+                    // PDF preview (grows to fill remaining space)
                     {move || preview_url.get().map(|url| view! {
-                        <div class="mt-8">
-                            <h3 class="text-base font-semibold text-gray-900 mb-4">"Preview"</h3>
+                        <div class="flex-1 min-h-0 relative group rounded-xl overflow-hidden border border-slate-200 shadow-inner bg-slate-50">
                             <iframe
                                 src={url}
-                                class="w-full border border-gray-200 rounded-lg shadow-sm"
-                                style="height: 500px;"
+                                class="w-full h-full"
                             ></iframe>
+                            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-slate-900/10 to-transparent h-6 pointer-events-none"></div>
                         </div>
                     })}
 
-                    // Start Analysis Button
+                    // Spacer when no preview
+                    {move || preview_url.get().is_none().then(|| view! {
+                        <div class="flex-1 rounded-xl border border-dashed border-slate-100 bg-slate-50/50 flex flex-col items-center justify-center opacity-50">
+                            <svg class="w-10 h-10 text-slate-300 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                            <p class="text-xs text-slate-400">"Preview will appear here"</p>
+                        </div>
+                    })}
+
+                    // Analyse button always at bottom
                     <button
-                        class="mt-8 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3.5 px-6 rounded-lg shadow-sm transition-colors duration-200 disabled:bg-gray-300 disabled:text-gray-500 disabled:cursor-not-allowed disabled:shadow-none"
+                        class="w-full bg-[#002D62] hover:bg-blue-800 text-white text-sm font-semibold py-3.5 px-4 rounded-xl transition-all duration-300 disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none disabled:cursor-not-allowed shadow-lg shadow-blue-900/20 hover:shadow-blue-900/40 active:transform active:scale-[0.98] flex items-center justify-center gap-2"
                         disabled={move || file_name.get().is_empty() || is_loading.get()}
                         on:click=on_start_analysis
                     >
-                        {move || if is_loading.get() {
-                            "Processing..."
-                        } else {
-                            "Start Analysis"
+                        {move || if is_loading.get() { 
+                            view! { 
+                                <svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                                "Analyzing Document..." 
+                            }.into_view() 
+                        } else { 
+                            view! {
+                                "Analyze Transcript"
+                                <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                            }.into_view()
                         }}
                     </button>
-                </div>
+                </aside>
 
-                // Bottom Section - Dashboard
-                <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-8">
-                    <h2 class="text-2xl font-semibold text-gray-900 mb-6">
-                        "Audit Results"
-                    </h2>
-
+                // Right column — Results
+                <main class="flex-1 bg-white rounded-2xl shadow-xl shadow-slate-200/50 flex flex-col overflow-hidden relative border border-slate-100">
                     {move || {
                         if is_loading.get() {
-                            // Loading state
                             view! {
-                                <div class="text-center py-16">
-                                    <div class="inline-block animate-spin rounded-full h-10 w-10 border-2 border-gray-200 border-t-emerald-600 mb-4"></div>
-                                    <p class="text-gray-600 text-sm font-medium">"Analyzing transcript..."</p>
+                                <div class="flex flex-col items-center justify-center h-full gap-5 z-10 relative">
+                                    <div class="relative w-16 h-16">
+                                        <div class="absolute inset-0 rounded-full border-4 border-slate-100"></div>
+                                        <div class="absolute inset-0 rounded-full border-4 border-[#002D62] border-t-transparent animate-spin"></div>
+                                    </div>
+                                    <p class="text-sm font-medium text-slate-500 animate-pulse">"Analyzing your academic progress..."</p>
                                 </div>
                             }.into_view()
                         } else if let Some(result) = audit_result.get() {
-                            // Display results
                             view! {
-                                <div>
-                                    // Total Credits
-                                    <div class="bg-gradient-to-br from-emerald-600 to-emerald-700 text-white p-8 rounded-xl mb-8 shadow-lg">
-                                        <h3 class="text-sm font-semibold text-emerald-100 uppercase tracking-wide mb-2">"Total Credits Earned"</h3>
-                                        <p class="text-5xl font-bold">{result.total_credits.to_string()}</p>
-                                    </div>
-
-                                    // Categories with Collapsible Cards
-                                    <h3 class="text-lg font-semibold text-gray-900 mb-6">"Credits by Category"</h3>
-                                    <div class="space-y-4 mb-8">
-                                        {result.categories.iter().map(|category| {
-                                            let category = category.clone();
-                                            view! {
-                                                <CategoryCard category={category} />
-                                            }
-                                        }).collect::<Vec<_>>()}
-                                    </div>
-
-                                    // Missing Subjects
-                                    {(!result.missing_subjects.is_empty()).then(|| view! {
-                                        <div class="bg-red-50 border border-red-200 p-6 rounded-xl">
-                                            <h4 class="font-semibold text-red-900 mb-3 flex items-center gap-2">
-                                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                                    <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
-                                                </svg>
-                                                "Missing Required Courses"
-                                            </h4>
-                                            <ul class="space-y-2">
-                                                {result.missing_subjects.iter().map(|subject| {
-                                                    view! {
-                                                        <li class="text-sm text-red-800 flex items-start gap-2 font-medium">
-                                                            <span class="text-red-500 mt-0.5">"•"</span>
-                                                            <span>{subject}</span>
-                                                        </li>
-                                                    }
-                                                }).collect::<Vec<_>>()}
-                                            </ul>
+                                <div class="flex flex-col h-full bg-slate-50/50">
+                                    // Hero bar
+                                    <div class="bg-white px-8 py-8 flex flex-col justify-center border-b border-slate-100 relative overflow-hidden">
+                                        <div class="absolute right-0 top-0 w-64 h-64 bg-blue-50/50 rounded-full blur-3xl -mr-20 -mt-20"></div>
+                                        <div class="relative">
+                                            <p class="text-sm font-semibold text-blue-600 mb-2 tracking-wide uppercase">"Total Progress"</p>
+                                            <div class="flex items-baseline gap-3">
+                                                <span class="text-6xl font-bold tracking-tight text-slate-900 leading-none">
+                                                    {result.total_credits as u32}
+                                                </span>
+                                                <span class="text-lg font-medium text-slate-400">"credits earned"</span>
+                                            </div>
                                         </div>
-                                    })}
+                                    </div>
+
+                                    <div class="overflow-y-auto flex-1 p-6 space-y-6">
+                                        // Stat tiles
+                                        <div class="grid grid-cols-3 gap-6">
+                                            {result.categories.iter().map(|cat| {
+                                                let pct = ((cat.collected_credits / cat.required_credits) * 100.0).min(100.0) as u32;
+                                                let complete = pct >= 100;
+                                                let cat_name = cat.name.clone();
+                                                let collected = cat.collected_credits as u32;
+                                                let required = cat.required_credits as u32;
+                                                view! {
+                                                    <div class="bg-white rounded-xl p-5 border border-slate-100 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden group">
+                                                        <div class={format!("absolute top-0 left-0 w-1 h-full {}", if complete { "bg-green-500" } else { "bg-blue-500" })}></div>
+                                                        <div class="flex justify-between items-start mb-4">
+                                                            <p class="text-sm font-semibold text-slate-700">{cat_name}</p>
+                                                            {if complete {
+                                                                view! { <span class="bg-green-100 text-green-700 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider">"Complete"</span> }.into_view()
+                                                            } else {
+                                                                view! { <span class="bg-blue-50 text-blue-600 text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider">"In Progress"</span> }.into_view()
+                                                            }}
+                                                        </div>
+                                                        <div class="flex items-baseline gap-1.5 mb-3">
+                                                            <span class="text-3xl font-bold text-slate-900">{collected}</span>
+                                                            <span class="text-sm font-medium text-slate-400">{format!("/ {}", required)}</span>
+                                                        </div>
+                                                        <div class="w-full bg-slate-100 rounded-full h-1.5 mb-1 overflow-hidden">
+                                                            <div
+                                                                class={format!("h-full rounded-full transition-all duration-1000 ease-out {}", if complete { "bg-green-500" } else { "bg-blue-500" })}
+                                                                style={format!("width: {}%", pct)}
+                                                            ></div>
+                                                        </div>
+                                                        <p class="text-[10px] text-slate-400 text-right font-medium">{format!("{}%", pct)}</p>
+                                                    </div>
+                                                }
+                                            }).collect::<Vec<_>>()}
+                                        </div>
+
+                                        // Course detail accordions
+                                        <div class="bg-white rounded-xl border border-slate-100 shadow-sm p-6">
+                                            <div class="flex items-center gap-3 mb-5">
+                                                <div class="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center">
+                                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                                                </div>
+                                                <h3 class="text-lg font-semibold text-slate-800">"Course Details"</h3>
+                                            </div>
+                                            <div class="space-y-3">
+                                                {result.categories.iter().map(|category| {
+                                                    let category = category.clone();
+                                                    view! { <CategoryCard category={category} /> }
+                                                }).collect::<Vec<_>>()}
+                                            </div>
+                                        </div>
+
+                                        // Missing courses grouped by category
+                                        {(!result.missing_subjects.is_empty()).then(|| {
+                                            let mut seen_cats: Vec<String> = Vec::new();
+                                            for m in &result.missing_subjects {
+                                                if !seen_cats.contains(&m.category) {
+                                                    seen_cats.push(m.category.clone());
+                                                }
+                                            }
+                                            view! {
+                                                <div class="bg-white rounded-xl border border-rose-100 shadow-sm p-6 relative overflow-hidden">
+                                                    <div class="absolute top-0 left-0 w-1 h-full bg-rose-400"></div>
+                                                    <div class="flex items-center gap-3 mb-5">
+                                                        <div class="w-8 h-8 rounded-lg bg-rose-50 text-rose-500 flex items-center justify-center">
+                                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                                        </div>
+                                                        <h3 class="text-lg font-semibold text-slate-800">"Missing Requirements"</h3>
+                                                    </div>
+                                                    <div class="space-y-5">
+                                                        {seen_cats.iter().map(|cat| {
+                                                            let cat_courses: Vec<_> = result.missing_subjects.iter()
+                                                                .filter(|m| &m.category == cat)
+                                                                .collect();
+                                                            let cat_label = cat.clone();
+                                                            view! {
+                                                                <div>
+                                                                    <p class="text-sm font-medium text-slate-700 mb-2">{cat_label}</p>
+                                                                    <div class="bg-rose-50/50 rounded-lg border border-rose-100 divide-y divide-rose-100">
+                                                                        {cat_courses.iter().map(|m| {
+                                                                            let desc = m.description.clone();
+                                                                            view! {
+                                                                                <div class="px-4 py-3 flex items-start gap-3">
+                                                                                    <div class="w-1.5 h-1.5 rounded-full bg-rose-400 mt-1.5 shrink-0"></div>
+                                                                                    <p class="text-sm text-slate-600">{desc}</p>
+                                                                                </div>
+                                                                            }
+                                                                        }).collect::<Vec<_>>()}
+                                                                    </div>
+                                                                </div>
+                                                            }
+                                                        }).collect::<Vec<_>>()}
+                                                    </div>
+                                                </div>
+                                            }
+                                        })}
+                                    </div>
                                 </div>
                             }.into_view()
                         } else {
-                            // Empty state
                             view! {
-                                <div class="text-center py-16">
-                                    <div class="inline-flex items-center justify-center w-14 h-14 rounded-full bg-gray-100 mb-4">
-                                        <svg class="w-7 h-7 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                                        </svg>
+                                <div class="flex flex-col items-center justify-center h-full text-center px-12 z-10 relative">
+                                    <div class="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mb-6 border-8 border-white shadow-sm">
+                                        <svg class="w-10 h-10 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9.5L18.5 7H20"></path></svg>
                                     </div>
-                                    <p class="text-gray-600 font-medium">"Upload a transcript to view audit results"</p>
+                                    <h3 class="text-xl font-semibold text-slate-800 mb-2">"No Transcript Selected"</h3>
+                                    <p class="text-sm text-slate-500 max-w-sm">"Upload your academic transcript PDF on the left to see your progress, completed courses, and missing requirements."</p>
                                 </div>
                             }.into_view()
                         }
                     }}
-                </div>
+                </main>
             </div>
         </div>
     }
