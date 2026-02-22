@@ -194,6 +194,7 @@ pub fn get_major_curriculum() -> MajorCurriculum {
                         MajorCluster {
                             id: "1.1".to_string(),
                             name: "Big Data".to_string(),
+                            min_courses: 3,
                             description: None,
                             courses: vec![
                                 MajorCourse {
@@ -216,6 +217,7 @@ pub fn get_major_curriculum() -> MajorCurriculum {
                         MajorCluster {
                             id: "1.2".to_string(),
                             name: "Business Intelligence".to_string(),
+                            min_courses: 3,
                             description: None,
                             courses: vec![
                                 MajorCourse {
@@ -238,6 +240,7 @@ pub fn get_major_curriculum() -> MajorCurriculum {
                         MajorCluster {
                             id: "1.3".to_string(),
                             name: "Information-driven Technology".to_string(),
+                            min_courses: 3,
                             description: None,
                             courses: vec![
                                 MajorCourse {
@@ -269,6 +272,7 @@ pub fn get_major_curriculum() -> MajorCurriculum {
                         MajorCluster {
                             id: "2.1".to_string(),
                             name: "Network Technology".to_string(),
+                            min_courses: 3,
                             description: None,
                             courses: vec![
                                 MajorCourse {
@@ -291,6 +295,7 @@ pub fn get_major_curriculum() -> MajorCurriculum {
                         MajorCluster {
                             id: "2.2".to_string(),
                             name: "Wireless and Mobile Technology".to_string(),
+                            min_courses: 3,
                             description: None,
                             courses: vec![
                                 MajorCourse {
@@ -313,6 +318,7 @@ pub fn get_major_curriculum() -> MajorCurriculum {
                         MajorCluster {
                             id: "2.3".to_string(),
                             name: "Internet Technology".to_string(),
+                            min_courses: 3,
                             description: None,
                             courses: vec![
                                 MajorCourse {
@@ -344,6 +350,7 @@ pub fn get_major_curriculum() -> MajorCurriculum {
                         MajorCluster {
                             id: "3.1".to_string(),
                             name: "Software Assessment and QA".to_string(),
+                            min_courses: 3,
                             description: None,
                             courses: vec![
                                 MajorCourse {
@@ -366,6 +373,7 @@ pub fn get_major_curriculum() -> MajorCurriculum {
                         MajorCluster {
                             id: "3.2".to_string(),
                             name: "Software Development and Management".to_string(),
+                            min_courses: 3,
                             description: None,
                             courses: vec![
                                 MajorCourse {
@@ -388,6 +396,7 @@ pub fn get_major_curriculum() -> MajorCurriculum {
                         MajorCluster {
                             id: "3.3".to_string(),
                             name: "UI/UX Design".to_string(),
+                            min_courses: 3,
                             description: None,
                             courses: vec![
                                 MajorCourse {
@@ -410,6 +419,7 @@ pub fn get_major_curriculum() -> MajorCurriculum {
                         MajorCluster {
                             id: "3.4".to_string(),
                             name: "Database Development".to_string(),
+                            min_courses: 3,
                             description: None,
                             courses: vec![
                                 MajorCourse {
@@ -441,6 +451,7 @@ pub fn get_major_curriculum() -> MajorCurriculum {
                         MajorCluster {
                             id: "4.1".to_string(),
                             name: "AI".to_string(),
+                            min_courses: 3,
                             description: Some("Choose 1 from: Neural Networks / Pattern Recognition / Internet of Robotic Things".to_string()),
                             courses: vec![
                                 MajorCourse {
@@ -473,6 +484,7 @@ pub fn get_major_curriculum() -> MajorCurriculum {
                         MajorCluster {
                             id: "4.2".to_string(),
                             name: "Linguistic Intelligence".to_string(),
+                            min_courses: 3,
                             description: None,
                             courses: vec![
                                 MajorCourse {
@@ -495,6 +507,7 @@ pub fn get_major_curriculum() -> MajorCurriculum {
                         MajorCluster {
                             id: "4.3".to_string(),
                             name: "Game Programming".to_string(),
+                            min_courses: 3,
                             description: None,
                             courses: vec![
                                 MajorCourse {
@@ -517,6 +530,7 @@ pub fn get_major_curriculum() -> MajorCurriculum {
                         MajorCluster {
                             id: "4.4".to_string(),
                             name: "Computer Vision".to_string(),
+                            min_courses: 3,
                             description: None,
                             courses: vec![
                                 MajorCourse {

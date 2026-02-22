@@ -1,27 +1,13 @@
-//! General Education Curriculum Data
-//!
-//! Defines all 6 GenEd strands and their requirements:
-//! 1. King's Philosophy and Benefits for Mankind
-//! 2. Citizenship and Peaceful Life
-//! 3. Knowledge and Critical Thinking
-//! 4. Foreign Language
-//! 5. Creative Arts
-//! 6. Technical Education (with sequential requirement)
-//! 
-//! Also includes elective subcategories for language and other selections.
-
 use crate::models::{
     GenEdCourse, GenEdCurriculum, GenEdElectiveSubCategory, GenEdElectives, GenEdStrand,
     GenEdSubGroup,
 };
 
-/// Returns the static General Education curriculum definition used during audits.
 pub fn get_gen_ed_curriculum() -> GenEdCurriculum {
     GenEdCurriculum {
         name: "General Education".to_string(),
         total_required_credits: 30.0,
         strands: vec![
-            // Strand 1: King's Philosophy and Benefits for Mankind
             GenEdStrand {
                 id: 1,
                 name: "King's Philosophy and Benefits for Mankind".to_string(),
@@ -42,7 +28,6 @@ pub fn get_gen_ed_curriculum() -> GenEdCurriculum {
                 selection_rule: Some("choose_all".to_string()),
                 sequence_groups: None,
             },
-            // Strand 2: Citizenship and Peaceful Life
             GenEdStrand {
                 id: 2,
                 name: "Citizenship and Peaceful Life".to_string(),
@@ -63,7 +48,6 @@ pub fn get_gen_ed_curriculum() -> GenEdCurriculum {
                 selection_rule: Some("choose_all".to_string()),
                 sequence_groups: None,
             },
-            // Strand 3: Entrepreneurship
             GenEdStrand {
                 id: 3,
                 name: "Entrepreneurship".to_string(),
@@ -77,7 +61,6 @@ pub fn get_gen_ed_curriculum() -> GenEdCurriculum {
                 selection_rule: Some("choose_all".to_string()),
                 sequence_groups: None,
             },
-            // Strand 4: Living with Awareness and Digital Literacy
             GenEdStrand {
                 id: 4,
                 name: "Living with Awareness and Digital Literacy".to_string(),
@@ -106,7 +89,6 @@ pub fn get_gen_ed_curriculum() -> GenEdCurriculum {
                 selection_rule: Some("choose_all_sub_groups".to_string()),
                 sequence_groups: None,
             },
-            // Strand 5: Systems Thinking, Logical and Numerical Thinking
             GenEdStrand {
                 id: 5,
                 name: "Systems Thinking, Logical and Numerical Thinking".to_string(),
@@ -135,7 +117,6 @@ pub fn get_gen_ed_curriculum() -> GenEdCurriculum {
                 selection_rule: Some("choose_all_sub_groups".to_string()),
                 sequence_groups: None,
             },
-            // Strand 6: Language and Communication (Sequential requirement)
             GenEdStrand {
                 id: 6,
                 name: "Language and Communication".to_string(),
@@ -145,7 +126,7 @@ pub fn get_gen_ed_curriculum() -> GenEdCurriculum {
                     GenEdCourse {
                         code: "890-101".to_string(),
                         name: "Essential English".to_string(),
-                        credits: 2.0,
+                        credits: 0.0,
                     },
                     GenEdCourse {
                         code: "890-102".to_string(),
@@ -170,11 +151,11 @@ pub fn get_gen_ed_curriculum() -> GenEdCurriculum {
                 ]),
                 selection_rule: Some("choose_sequential_pair".to_string()),
                 sequence_groups: Some(vec![
-                    vec!["890-101".to_string(), "890-102".to_string()],
+                    vec!["890-102".to_string(), "890-103".to_string()],
                     vec!["890-103".to_string(), "890-104".to_string()],
+                    vec!["890-104".to_string(), "890-105".to_string()],
                 ]),
             },
-            // Strand 7: Aesthetics and Sports
             GenEdStrand {
                 id: 7,
                 name: "Aesthetics and Sports".to_string(),
@@ -200,7 +181,6 @@ pub fn get_gen_ed_curriculum() -> GenEdCurriculum {
             name: "GenEd Electives".to_string(),
             total_required_credits: 6.0,
             sub_categories: vec![
-                // Language Electives
                 GenEdElectiveSubCategory {
                     name: "Language Electives".to_string(),
                     required_credits: 2.0,
@@ -234,7 +214,6 @@ pub fn get_gen_ed_curriculum() -> GenEdCurriculum {
                         },
                     ],
                 },
-                // General Electives
                 GenEdElectiveSubCategory {
                     name: "General Electives".to_string(),
                     required_credits: 4.0,

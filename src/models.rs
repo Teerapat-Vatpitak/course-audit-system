@@ -113,6 +113,7 @@ pub struct MajorCourse {
 pub struct MajorCluster {
     pub id: String,
     pub name: String,
+    pub min_courses: u32,
     pub description: Option<String>,
     pub courses: Vec<MajorCourse>,
 }

@@ -39,7 +39,7 @@ pub fn audit_gen_ed(
                             if let Some((idx, _parsed)) = courses.iter().enumerate().find(|(idx, parsed)| {
                                 !used_indices.contains(idx)
                                     && parsed.code == *code
-                                    && !matches!(parsed.grade.as_str(), "F" | "W" | "S" | "U")
+                                    && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
                             }) {
                                 found_indices.push(idx);
                                 credits_sum += def_course.credits;
@@ -73,7 +73,7 @@ pub fn audit_gen_ed(
                 if let Some((idx, _parsed)) = courses.iter().enumerate().find(|(idx, parsed)| {
                     !used_indices.contains(idx)
                         && parsed.code == course.code
-                        && !matches!(parsed.grade.as_str(), "F" | "W" | "S" | "U")
+                        && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
                 }) {
                     completed_credits += course.credits;
                     used_indices.insert(idx);
@@ -99,7 +99,7 @@ pub fn audit_gen_ed(
                     if let Some((idx, _parsed)) = courses.iter().enumerate().find(|(idx, parsed)| {
                         !used_indices.contains(idx)
                             && parsed.code == course.code
-                            && !matches!(parsed.grade.as_str(), "F" | "W" | "S" | "U")
+                            && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
                     }) {
                         completed_credits += course.credits;
                         used_indices.insert(idx);
@@ -127,7 +127,7 @@ pub fn audit_gen_ed(
             if let Some((idx, _parsed)) = courses.iter().enumerate().find(|(idx, parsed)| {
                 !used_indices.contains(idx)
                     && parsed.code == course.code
-                    && !matches!(parsed.grade.as_str(), "F" | "W" | "S" | "U")
+                    && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
             }) {
                 completed_credits += course.credits;
                 used_indices.insert(idx);
@@ -161,7 +161,7 @@ pub fn audit_major(
         if let Some((idx, _)) = courses.iter().enumerate().find(|(idx, parsed)| {
             !used_indices.contains(idx)
                 && parsed.code == course.code
-                && !matches!(parsed.grade.as_str(), "F" | "W" | "S" | "U")
+                && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
         }) {
             completed_credits += course.credits;
             used_indices.insert(idx);
@@ -184,7 +184,7 @@ pub fn audit_major(
         if let Some((idx, _)) = courses.iter().enumerate().find(|(idx, parsed)| {
             !used_indices.contains(idx)
                 && parsed.code == course.code
-                && !matches!(parsed.grade.as_str(), "F" | "W" | "S" | "U")
+                && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
         }) {
             completed_credits += course.credits;
             used_indices.insert(idx);
@@ -203,14 +203,16 @@ pub fn audit_major(
         }
     }
 
+    let mut capstone_completed = false;
     for option in &curriculum.capstone.options {
         if let Some((idx, _)) = courses.iter().enumerate().find(|(idx, parsed)| {
             !used_indices.contains(idx)
                 && parsed.code == option.code
-                && !matches!(parsed.grade.as_str(), "F" | "W" | "S" | "U")
+                && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
         }) {
             completed_credits += option.credits;
             used_indices.insert(idx);
+            capstone_completed = true;
             logging::log!(
                 "[AUDIT] Major Capstone used: {} - {} credits (from curriculum)",
                 option.code,
@@ -220,24 +222,70 @@ pub fn audit_major(
         }
     }
 
+    if !capstone_completed {
+        let options_desc = curriculum.capstone.options.iter()
+            .map(|o| format!("{} ({})", o.code, o.name))
+            .collect::<Vec<_>>()
+            .join(" OR ");
+            
+        missing_courses.push(MissingCourse {
+            category: "Capstone".to_string(),
+            description: format!("Choose 1: {}", options_desc),
+        });
+    }
+
+    let mut completed_clusters_count = 0;
     for domain in &curriculum.electives.domains {
         for cluster in &domain.clusters {
+            let mut courses_found_in_cluster = 0;
             for course in &cluster.courses {
                 if let Some((idx, _)) = courses.iter().enumerate().find(|(idx, parsed)| {
                     !used_indices.contains(idx)
                         && parsed.code == course.code
-                        && !matches!(parsed.grade.as_str(), "F" | "W" | "S" | "U")
+                        && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
                 }) {
                     elective_credits += course.credits;
                     used_indices.insert(idx);
+                    courses_found_in_cluster += 1;
                     logging::log!(
                         "[AUDIT] Major Elective used: {} - {} credits (from curriculum)",
                         course.code,
                         course.credits
                     );
+                } else if courses.iter().any(|c| {
+                    c.code == course.code && !matches!(c.grade.as_str(), "F" | "W" | "U")
+                }) {
+                    // Course taken but used elsewhere (or duplicate). Still counts towards completion of the cluster.
+                    courses_found_in_cluster += 1;
+                    logging::log!(
+                        "[AUDIT] Major Elective (already used): {} counts towards cluster {}",
+                        course.code,
+                        cluster.name
+                    );
                 }
             }
+            if courses_found_in_cluster >= cluster.min_courses {
+                completed_clusters_count += 1;
+                logging::log!(
+                    "[AUDIT] Completed cluster: {} (Found {}/{} required)",
+                    cluster.name,
+                    courses_found_in_cluster,
+                    cluster.min_courses
+                );
+            }
         }
+    }
+
+    if completed_clusters_count < curriculum.electives.clusters_to_complete {
+        missing_courses.push(MissingCourse {
+            category: "Major Electives".to_string(),
+            description: format!(
+                "Required: {} Clusters, Completed: {}. Please complete all courses within at least {} clusters.",
+                curriculum.electives.clusters_to_complete,
+                completed_clusters_count,
+                curriculum.electives.clusters_to_complete
+            ),
+        });
     }
 
     // Greedy match "others" electives so repeated special topics accumulate credits.
@@ -245,7 +293,7 @@ pub fn audit_major(
         for (idx, parsed) in courses.iter().enumerate() {
             if !used_indices.contains(&idx)
                 && parsed.code == course.code
-                && !matches!(parsed.grade.as_str(), "F" | "W" | "S" | "U")
+                && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
             {
                 elective_credits += course.credits;
                 used_indices.insert(idx);
@@ -273,7 +321,7 @@ pub fn calculate_free_electives(
 
     for (idx, parsed) in courses.iter().enumerate() {
         if !used_indices.contains(&idx) {
-            if !matches!(parsed.grade.as_str(), "F" | "W" | "S" | "U") {
+            if !matches!(parsed.grade.as_str(), "F" | "W" | "U") {
                 let credits = parsed.parsed_credit;
                 free_elective_credits += credits;
                 free_elective_list.push(format!(
@@ -294,3 +342,4 @@ pub fn calculate_free_electives(
 
     (free_elective_credits, free_elective_list)
 }
+

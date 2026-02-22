@@ -51,8 +51,15 @@ pub fn parse_transcript(text: &str) -> Vec<ParsedCourse> {
         }
         .to_string();
 
-        // Greedy match: keep every instance of 344-496 by appending a topic counter
-        let final_name = if normalized_code == "344-496" {
+        // Greedy match: Special topics (344-496 to 344-499) might be repeated.
+        // We handle any course starting with 344-49, EXCEPT the specific Capstone/Core ones.
+        let is_special_topic = normalized_code.starts_with("344-49") && 
+            !matches!(
+                normalized_code.as_str(),
+                "344-491" | "344-492" | "344-493" | "344-494" | "344-495"
+            );
+
+        let final_name = if is_special_topic {
             let counter = special_topics_count
                 .entry(normalized_code.clone())
                 .or_insert(0);
