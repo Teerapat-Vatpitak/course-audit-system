@@ -6,65 +6,166 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description"
         content="Privacy-first WebAssembly app for auditing PSU Computer Science transcripts against curriculum requirements. 100% client-side processing.">
-    <meta name="theme-color" content="#002D62">
-    <meta property="og:title" content="Course Audit System">
+    <meta name="theme-color" content="#0a0a0a">
+    <meta property="og:title" content="Course Audit — PSU CS">
     <meta property="og:description"
         content="Upload your transcript PDF and instantly audit your academic progress — all processing happens locally in your browser.">
     <meta property="og:type" content="website">
-    <title>Course Audit System</title>
+    <title>Course Audit — PSU CS</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+        rel="stylesheet">
     <link data-trunk rel="css" href="style.css" />
     <link data-trunk rel="tailwind-css" href="style.css" />
 
     <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+        }
+
         body {
-            background-color: #f8fafc;
-            background-image: radial-gradient(at 40% 20%, hsla(217, 100%, 94%, 1) 0px, transparent 50%),
-                radial-gradient(at 80% 0%, hsla(210, 100%, 96%, 1) 0px, transparent 50%),
-                radial-gradient(at 0% 50%, hsla(213, 100%, 95%, 1) 0px, transparent 50%);
-            background-attachment: fixed;
+            background-color: #fafafa;
             min-height: 100vh;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #d4d4d8;
+            border-radius: 99px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #a1a1aa;
+        }
+
+        /* Smooth mesh gradient background */
+        .mesh-bg {
+            background-color: #fafafa;
+            background-image:
+                radial-gradient(at 0% 0%, hsla(220, 60%, 96%, 0.8) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, hsla(250, 50%, 96%, 0.6) 0px, transparent 50%),
+                radial-gradient(at 50% 100%, hsla(200, 40%, 96%, 0.5) 0px, transparent 50%);
+            background-attachment: fixed;
+        }
+
+        /* Animate progress bars on load */
+        @keyframes progressGrow {
+            from {
+                width: 0%;
+            }
+        }
+
+        .progress-animated {
+            animation: progressGrow 1.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        /* Stagger children fade-in */
+        @keyframes staggerFadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .stagger-in>* {
+            animation: staggerFadeIn 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+
+        .stagger-in>*:nth-child(1) {
+            animation-delay: 0ms;
+        }
+
+        .stagger-in>*:nth-child(2) {
+            animation-delay: 60ms;
+        }
+
+        .stagger-in>*:nth-child(3) {
+            animation-delay: 120ms;
+        }
+
+        .stagger-in>*:nth-child(4) {
+            animation-delay: 180ms;
+        }
+
+        .stagger-in>*:nth-child(5) {
+            animation-delay: 240ms;
+        }
+
+        /* Donut chart animation */
+        @keyframes donutFill {
+            from {
+                stroke-dasharray: 0 100;
+            }
+        }
+
+        .donut-animated {
+            animation: donutFill 1.4s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+        }
+
+        /* Pulse dot */
+        @keyframes pulseDot {
+
+            0%,
+            100% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.4;
+            }
+        }
+
+        .pulse-dot {
+            animation: pulseDot 2s ease-in-out infinite;
         }
     </style>
 
     <!-- PDF.js Library -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
-        integrity="sha512-q+4liFwdPC/bNdhUpZx0JXWT1MiLbZYBjTnJBW5kmoig1DiiQ7MZQF+HhddLmOhcAFRUaRJkso6JnnmBcyHTQ=="
-        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous"
+        referrerpolicy="no-referrer"></script>
 </head>
 
-<body>
+<body class="mesh-bg">
     <noscript>
-        <div style="text-align:center;padding:4rem;font-family:sans-serif;">
-            <h1>JavaScript Required</h1>
-            <p>This application requires JavaScript and WebAssembly to run. Please enable JavaScript in your browser
-                settings.</p>
+        <div style="text-align:center;padding:4rem;font-family:'Inter',sans-serif;color:#18181b;">
+            <h1 style="font-size:1.5rem;font-weight:700;margin-bottom:0.5rem;">JavaScript Required</h1>
+            <p style="color:#71717a;">This application requires JavaScript and WebAssembly to run.</p>
         </div>
     </noscript>
     <!-- PDF Text Extraction Helper -->
     <script>
-        // Set up PDF.js worker
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-        /**
-         * Extract text from PDF using PDF.js
-         * @param {ArrayBuffer} arrayBuffer - The PDF file as ArrayBuffer
-         * @returns {Promise<string>} - The extracted text
-         */
         window.extractTextFromPDF = async function (arrayBuffer) {
             try {
                 const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
                 let fullText = '';
-
                 for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
                     const page = await pdf.getPage(pageNum);
                     const textContent = await page.getTextContent();
                     const pageText = textContent.items.map(item => item.str).join(' ');
                     fullText += pageText + '\n';
                 }
-
                 return fullText;
             } catch (error) {
                 console.error('PDF extraction error:', error);
