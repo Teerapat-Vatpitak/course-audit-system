@@ -108,7 +108,7 @@ course-audit-system/
 | **Capstone**          | 3–6 cr      | Senior Project or Co-operative Education (choose 1)                                                |
 | **Major Electives**   | 12 cr       | Domain-based clusters — must complete at least 2 full clusters                                     |
 | **Free Electives**    | 6 cr        | Auto-detected from unmatched passing courses                                                       |
-| **Total**             | **~132 cr** | Full B.Eng. Computer Science degree                                                                |
+| **Total**             | **~132 cr** | Full B.Sc. (Computer Science) degree                                                               |
 
 ### Audit Rules
 

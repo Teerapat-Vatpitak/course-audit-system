@@ -472,7 +472,7 @@ fn App() -> impl IntoView {
                                             </div>
                                             <div class="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 rounded-lg px-3 py-1.5 self-start sm:self-auto">
                                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347"/></svg>
-                                                <span class="font-medium">"B.Eng. Computer Science"</span>
+                                                <span class="font-medium">"B.Sc. (Computer Science)"</span>
                                             </div>
                                         </div>
                                     </div>
