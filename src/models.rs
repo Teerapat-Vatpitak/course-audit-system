@@ -29,15 +29,15 @@ pub struct Category {
 /// A single missing required course, tagged with its curriculum category
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MissingCourse {
-    pub category: String,     // e.g. "General Education", "Major Courses"
-    pub description: String,  // e.g. "344-101 - Calculus I"
+    pub category: String,    // e.g. "General Education", "Major Courses"
+    pub description: String, // e.g. "344-101 - Calculus I"
 }
 
 /// Final audit result containing all categories and missing requirements
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditResult {
-    pub total_credits: f32,               // Total credits earned
-    pub categories: Vec<Category>,        // All audit categories (GenEd, Major, Electives)
+    pub total_credits: f32,                   // Total credits earned
+    pub categories: Vec<Category>,            // All audit categories (GenEd, Major, Electives)
     pub missing_subjects: Vec<MissingCourse>, // Missing courses with their category
 }
 
@@ -179,4 +179,34 @@ pub struct ParsedCourse {
     pub name: String,
     pub grade: String,
     pub parsed_credit: f32,
+}
+
+// ── Shared utility functions ────────────────────────────────────────────────
+
+/// Returns `true` when the grade represents a passing result.
+/// Failing markers: F (fail), W (withdraw), U (unsatisfactory).
+pub fn is_passing_grade(grade: &str) -> bool {
+    grade
+        .trim()
+        .chars()
+        .next()
+        .map(|c| !matches!(c.to_ascii_uppercase(), 'F' | 'W' | 'U'))
+        .unwrap_or(false)
+}
+
+/// Builds a deduplication key for a course so that repeatable special-topic
+/// courses (344-496 … 344-499) are keyed by code **and** name, while all other
+/// courses are keyed by code alone.
+pub fn free_elective_dedupe_key(code: &str, name: &str) -> String {
+    let is_repeatable_special_topic = code.starts_with("344-49")
+        && !matches!(
+            code,
+            "344-491" | "344-492" | "344-493" | "344-494" | "344-495"
+        );
+
+    if is_repeatable_special_topic {
+        format!("{}::{}", code, name)
+    } else {
+        code.to_string()
+    }
 }

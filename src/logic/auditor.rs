@@ -6,9 +6,17 @@
 //! - **Free Elective Detection**: Credits unmatched courses as free electives
 //! - **Greedy Matching**: Allows repeatable courses to accumulate credits
 
-use crate::models::{GenEdCurriculum, MajorCurriculum, MissingCourse, ParsedCourse};
-use leptos::logging;
+use crate::models::{
+    free_elective_dedupe_key, is_passing_grade, GenEdCurriculum, MajorCurriculum, MissingCourse,
+    ParsedCourse,
+};
 use std::collections::HashSet;
+
+/// Returns the lesser of the curriculum-defined credit value and the parsed
+/// transcript value, guarding against PDF-parsing drift.
+fn matched_course_credits(curriculum_credits: f32, parsed: &ParsedCourse) -> f32 {
+    curriculum_credits.min(parsed.parsed_credit)
+}
 
 /// Audits courses against the GenEd curriculum, honoring strand sub-groups and
 /// sequential strand rules. Credits come from the curriculum (golden data).
@@ -19,103 +27,177 @@ pub fn audit_gen_ed(
     let mut completed_credits = 0.0;
     let mut missing_courses: Vec<MissingCourse> = Vec::new();
     let mut used_indices = HashSet::new();
+    let mut gen_ed_elective_total_credits = 0.0;
 
     for strand in &curriculum.strands {
-        // Handle sequential requirement for Strand 6 by finding any valid pair.
-        if strand.id == 6 {
-            let mut sequence_satisfied = false;
+        let selection_rule = strand.selection_rule.as_deref().unwrap_or("choose_all");
 
-            if let (Some(strand_courses), Some(sequence_groups)) = (&strand.courses, &strand.sequence_groups) {
-                'outer: for pair in sequence_groups {
-                    if pair.len() != 2 {
-                        continue;
-                    }
+        match selection_rule {
+            "choose_sequential_pair" => {
+                let mut sequence_satisfied = false;
 
-                    let mut found_indices = Vec::new();
-                    let mut credits_sum = 0.0;
+                if let (Some(strand_courses), Some(sequence_groups)) =
+                    (&strand.courses, &strand.sequence_groups)
+                {
+                    'outer: for pair in sequence_groups {
+                        if pair.len() != 2 {
+                            continue;
+                        }
 
-                    for code in pair {
-                        if let Some(def_course) = strand_courses.iter().find(|c| &c.code == code) {
-                            if let Some((idx, _parsed)) = courses.iter().enumerate().find(|(idx, parsed)| {
-                                !used_indices.contains(idx)
-                                    && parsed.code == *code
-                                    && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
-                            }) {
-                                found_indices.push(idx);
-                                credits_sum += def_course.credits;
+                        let mut found_indices = Vec::new();
+                        let mut credits_sum = 0.0;
+
+                        for code in pair {
+                            if let Some(def_course) =
+                                strand_courses.iter().find(|c| &c.code == code)
+                            {
+                                if let Some((idx, parsed)) =
+                                    courses.iter().enumerate().find(|(idx, parsed)| {
+                                        !used_indices.contains(idx)
+                                            && parsed.code == *code
+                                            && is_passing_grade(&parsed.grade)
+                                    })
+                                {
+                                    found_indices.push(idx);
+                                    credits_sum +=
+                                        matched_course_credits(def_course.credits, parsed);
+                                }
                             }
                         }
-                    }
 
-                    if found_indices.len() == 2 {
-                        for idx in found_indices {
-                            used_indices.insert(idx);
+                        if found_indices.len() == 2 {
+                            for idx in found_indices {
+                                used_indices.insert(idx);
+                            }
+                            completed_credits += credits_sum;
+                            sequence_satisfied = true;
+
+                            break 'outer;
                         }
-                        completed_credits += credits_sum;
-                        sequence_satisfied = true;
-                        logging::log!(
-                            "[AUDIT] GenEd Strand 6 sequence satisfied with pair {:?} - {} credits",
-                            pair,
-                            credits_sum
-                        );
-                        break 'outer;
                     }
                 }
-            }
 
-            if sequence_satisfied {
-                continue;
-            }
-        }
+                if !sequence_satisfied {
+                    if let Some(sequence_groups) = &strand.sequence_groups {
+                        let pair_text = sequence_groups
+                            .iter()
+                            .filter(|p| p.len() == 2)
+                            .map(|p| format!("{} + {}", p[0], p[1]))
+                            .collect::<Vec<_>>()
+                            .join(" OR ");
 
-        if let Some(strand_courses) = &strand.courses {
-            for course in strand_courses {
-                if let Some((idx, _parsed)) = courses.iter().enumerate().find(|(idx, parsed)| {
-                    !used_indices.contains(idx)
-                        && parsed.code == course.code
-                        && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
-                }) {
-                    completed_credits += course.credits;
-                    used_indices.insert(idx);
-                    logging::log!(
-                        "[AUDIT] GenEd Strand {} used: {} (index {}) - {} credits",
-                        strand.id,
-                        course.code,
-                        idx,
-                        course.credits
-                    );
-                } else {
-                    missing_courses.push(MissingCourse {
-                        category: "General Education".to_string(),
-                        description: format!("{} - {}", course.code, course.name),
-                    });
-                }
-            }
-        }
-
-        if let Some(sub_groups) = &strand.sub_groups {
-            for sub_group in sub_groups {
-                for course in &sub_group.courses {
-                    if let Some((idx, _parsed)) = courses.iter().enumerate().find(|(idx, parsed)| {
-                        !used_indices.contains(idx)
-                            && parsed.code == course.code
-                            && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
-                    }) {
-                        completed_credits += course.credits;
-                        used_indices.insert(idx);
-                        logging::log!(
-                            "[AUDIT] GenEd Strand {} -> {} used: {} (index {}) - {} credits",
-                            strand.id,
-                            sub_group.name,
-                            course.code,
-                            idx,
-                            course.credits
-                        );
-                    } else {
                         missing_courses.push(MissingCourse {
                             category: "General Education".to_string(),
-                            description: format!("{} - {}", course.code, course.name),
+                            description: format!(
+                                "{}: choose one pair ({})",
+                                strand.name, pair_text
+                            ),
                         });
+                    }
+                }
+            }
+            "choose_one" => {
+                if let Some(strand_courses) = &strand.courses {
+                    if let Some((_course, idx, matched_credits)) =
+                        strand_courses.iter().find_map(|course| {
+                            courses
+                                .iter()
+                                .enumerate()
+                                .find(|(idx, parsed)| {
+                                    !used_indices.contains(idx)
+                                        && parsed.code == course.code
+                                        && is_passing_grade(&parsed.grade)
+                                })
+                                .map(|(idx, parsed)| {
+                                    (course, idx, matched_course_credits(course.credits, parsed))
+                                })
+                        })
+                    {
+                        completed_credits += matched_credits;
+                        used_indices.insert(idx);
+                    } else {
+                        let options = strand_courses
+                            .iter()
+                            .map(|c| format!("{} - {}", c.code, c.name))
+                            .collect::<Vec<_>>()
+                            .join(" OR ");
+
+                        missing_courses.push(MissingCourse {
+                            category: "General Education".to_string(),
+                            description: format!("{}: choose 1 ({})", strand.name, options),
+                        });
+                    }
+                }
+            }
+            "choose_all_sub_groups" => {
+                if let Some(sub_groups) = &strand.sub_groups {
+                    for sub_group in sub_groups {
+                        let mut sub_group_credits = 0.0;
+
+                        for course in &sub_group.courses {
+                            if sub_group_credits >= sub_group.required_credits {
+                                break;
+                            }
+
+                            if let Some((idx, parsed)) =
+                                courses.iter().enumerate().find(|(idx, parsed)| {
+                                    !used_indices.contains(idx)
+                                        && parsed.code == course.code
+                                        && is_passing_grade(&parsed.grade)
+                                })
+                            {
+                                let matched_credits =
+                                    matched_course_credits(course.credits, parsed);
+                                completed_credits += matched_credits;
+                                sub_group_credits += matched_credits;
+                                used_indices.insert(idx);
+                            }
+                        }
+
+                        if sub_group_credits < sub_group.required_credits {
+                            let options = sub_group
+                                .courses
+                                .iter()
+                                .map(|c| format!("{} - {}", c.code, c.name))
+                                .collect::<Vec<_>>()
+                                .join(" OR ");
+
+                            missing_courses.push(MissingCourse {
+                                category: "General Education".to_string(),
+                                description: format!(
+                                    "{} > {}: missing {:.1} credits (options: {})",
+                                    strand.name,
+                                    sub_group.name,
+                                    sub_group.required_credits - sub_group_credits,
+                                    options
+                                ),
+                            });
+                        }
+                    }
+                }
+            }
+            _ => {
+                if let Some(strand_courses) = &strand.courses {
+                    for course in strand_courses {
+                        if let Some((idx, parsed)) =
+                            courses.iter().enumerate().find(|(idx, parsed)| {
+                                !used_indices.contains(idx)
+                                    && parsed.code == course.code
+                                    && is_passing_grade(&parsed.grade)
+                            })
+                        {
+                            let matched_credits = matched_course_credits(course.credits, parsed);
+                            completed_credits += matched_credits;
+                            used_indices.insert(idx);
+                        } else {
+                            missing_courses.push(MissingCourse {
+                                category: "General Education".to_string(),
+                                description: format!(
+                                    "{}: {} - {}",
+                                    strand.name, course.code, course.name
+                                ),
+                            });
+                        }
                     }
                 }
             }
@@ -123,22 +205,58 @@ pub fn audit_gen_ed(
     }
 
     for sub_cat in &curriculum.electives.sub_categories {
+        let mut sub_cat_credits = 0.0;
         for course in &sub_cat.courses {
-            if let Some((idx, _parsed)) = courses.iter().enumerate().find(|(idx, parsed)| {
+            if let Some((idx, parsed)) = courses.iter().enumerate().find(|(idx, parsed)| {
                 !used_indices.contains(idx)
                     && parsed.code == course.code
-                    && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
+                    && is_passing_grade(&parsed.grade)
             }) {
-                completed_credits += course.credits;
+                let matched_credits = matched_course_credits(course.credits, parsed);
+                completed_credits += matched_credits;
+                gen_ed_elective_total_credits += matched_credits;
+                sub_cat_credits += matched_credits;
                 used_indices.insert(idx);
-                logging::log!(
-                    "[AUDIT] GenEd Elective -> {} used: {} (index {}) - {} credits",
-                    sub_cat.name,
-                    course.code,
-                    idx,
-                    course.credits
-                );
             }
+        }
+
+        if sub_cat_credits < sub_cat.required_credits {
+            missing_courses.push(MissingCourse {
+                category: "General Education".to_string(),
+                description: format!(
+                    "GenEd Elective > {}: missing {:.1} credits",
+                    sub_cat.name,
+                    sub_cat.required_credits - sub_cat_credits
+                ),
+            });
+        }
+    }
+
+    if gen_ed_elective_total_credits < curriculum.electives.total_required_credits {
+        missing_courses.push(MissingCourse {
+            category: "General Education".to_string(),
+            description: format!(
+                "{}: missing {:.1} credits",
+                curriculum.electives.name,
+                curriculum.electives.total_required_credits - gen_ed_elective_total_credits
+            ),
+        });
+    }
+
+    if completed_credits < curriculum.total_required_credits {
+        let has_ge_summary = missing_courses.iter().any(|m| {
+            m.category == "General Education"
+                && m.description.starts_with("Overall General Education")
+        });
+
+        if !has_ge_summary {
+            missing_courses.push(MissingCourse {
+                category: "General Education".to_string(),
+                description: format!(
+                    "Overall General Education: missing {:.1} credits",
+                    curriculum.total_required_credits - completed_credits
+                ),
+            });
         }
     }
 
@@ -158,20 +276,14 @@ pub fn audit_major(
     let mut used_indices = HashSet::new();
 
     for course in &curriculum.basic_science.courses {
-        if let Some((idx, _)) = courses.iter().enumerate().find(|(idx, parsed)| {
+        if let Some((idx, parsed)) = courses.iter().enumerate().find(|(idx, parsed)| {
             !used_indices.contains(idx)
                 && parsed.code == course.code
-                && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
+                && is_passing_grade(&parsed.grade)
         }) {
-            completed_credits += course.credits;
+            let matched_credits = matched_course_credits(course.credits, parsed);
+            completed_credits += matched_credits;
             used_indices.insert(idx);
-            logging::log!(
-                "[AUDIT] Major Basic Science used: {} - {} credits (from curriculum)",
-                course.code,
-                course.credits
-            );
-        } else if courses.iter().any(|c| c.code == course.code) {
-            logging::log!("[AUDIT] Major Basic Science failed: {}", course.code);
         } else {
             missing_courses.push(MissingCourse {
                 category: "Basic Science".to_string(),
@@ -181,20 +293,14 @@ pub fn audit_major(
     }
 
     for course in &curriculum.core_courses.courses {
-        if let Some((idx, _)) = courses.iter().enumerate().find(|(idx, parsed)| {
+        if let Some((idx, parsed)) = courses.iter().enumerate().find(|(idx, parsed)| {
             !used_indices.contains(idx)
                 && parsed.code == course.code
-                && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
+                && is_passing_grade(&parsed.grade)
         }) {
-            completed_credits += course.credits;
+            let matched_credits = matched_course_credits(course.credits, parsed);
+            completed_credits += matched_credits;
             used_indices.insert(idx);
-            logging::log!(
-                "[AUDIT] Major Core used: {} - {} credits (from curriculum)",
-                course.code,
-                course.credits
-            );
-        } else if courses.iter().any(|c| c.code == course.code) {
-            logging::log!("[AUDIT] Major Core failed: {}", course.code);
         } else {
             missing_courses.push(MissingCourse {
                 category: "Core Courses".to_string(),
@@ -205,29 +311,29 @@ pub fn audit_major(
 
     let mut capstone_completed = false;
     for option in &curriculum.capstone.options {
-        if let Some((idx, _)) = courses.iter().enumerate().find(|(idx, parsed)| {
+        if let Some((idx, parsed)) = courses.iter().enumerate().find(|(idx, parsed)| {
             !used_indices.contains(idx)
                 && parsed.code == option.code
-                && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
+                && is_passing_grade(&parsed.grade)
         }) {
-            completed_credits += option.credits;
+            let matched_credits = matched_course_credits(option.credits, parsed);
+            completed_credits += matched_credits;
             used_indices.insert(idx);
             capstone_completed = true;
-            logging::log!(
-                "[AUDIT] Major Capstone used: {} - {} credits (from curriculum)",
-                option.code,
-                option.credits
-            );
+
             break;
         }
     }
 
     if !capstone_completed {
-        let options_desc = curriculum.capstone.options.iter()
+        let options_desc = curriculum
+            .capstone
+            .options
+            .iter()
             .map(|o| format!("{} ({})", o.code, o.name))
             .collect::<Vec<_>>()
             .join(" OR ");
-            
+
         missing_courses.push(MissingCourse {
             category: "Capstone".to_string(),
             description: format!("Choose 1: {}", options_desc),
@@ -239,39 +345,25 @@ pub fn audit_major(
         for cluster in &domain.clusters {
             let mut courses_found_in_cluster = 0;
             for course in &cluster.courses {
-                if let Some((idx, _)) = courses.iter().enumerate().find(|(idx, parsed)| {
+                if let Some((idx, parsed)) = courses.iter().enumerate().find(|(idx, parsed)| {
                     !used_indices.contains(idx)
                         && parsed.code == course.code
-                        && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
+                        && is_passing_grade(&parsed.grade)
                 }) {
-                    elective_credits += course.credits;
+                    let matched_credits = matched_course_credits(course.credits, parsed);
+                    elective_credits += matched_credits;
                     used_indices.insert(idx);
                     courses_found_in_cluster += 1;
-                    logging::log!(
-                        "[AUDIT] Major Elective used: {} - {} credits (from curriculum)",
-                        course.code,
-                        course.credits
-                    );
-                } else if courses.iter().any(|c| {
-                    c.code == course.code && !matches!(c.grade.as_str(), "F" | "W" | "U")
-                }) {
+                } else if courses
+                    .iter()
+                    .any(|c| c.code == course.code && is_passing_grade(&c.grade))
+                {
                     // Course taken but used elsewhere (or duplicate). Still counts towards completion of the cluster.
                     courses_found_in_cluster += 1;
-                    logging::log!(
-                        "[AUDIT] Major Elective (already used): {} counts towards cluster {}",
-                        course.code,
-                        cluster.name
-                    );
                 }
             }
             if courses_found_in_cluster >= cluster.min_courses {
                 completed_clusters_count += 1;
-                logging::log!(
-                    "[AUDIT] Completed cluster: {} (Found {}/{} required)",
-                    cluster.name,
-                    courses_found_in_cluster,
-                    cluster.min_courses
-                );
             }
         }
     }
@@ -293,21 +385,21 @@ pub fn audit_major(
         for (idx, parsed) in courses.iter().enumerate() {
             if !used_indices.contains(&idx)
                 && parsed.code == course.code
-                && !matches!(parsed.grade.as_str(), "F" | "W" | "U")
+                && is_passing_grade(&parsed.grade)
             {
-                elective_credits += course.credits;
+                let matched_credits = matched_course_credits(course.credits, parsed);
+                elective_credits += matched_credits;
                 used_indices.insert(idx);
-                logging::log!(
-                    "[AUDIT] Major Elective (Other) used: {} (index {}) - {} credits (from curriculum)",
-                    course.code,
-                    idx,
-                    course.credits
-                );
             }
         }
     }
 
-    (completed_credits, elective_credits, missing_courses, used_indices)
+    (
+        completed_credits,
+        elective_credits,
+        missing_courses,
+        used_indices,
+    )
 }
 
 /// Calculates free-elective credits from unused courses, pulling credit values
@@ -318,28 +410,25 @@ pub fn calculate_free_electives(
 ) -> (f32, Vec<String>) {
     let mut free_elective_credits = 0.0;
     let mut free_elective_list = Vec::new();
+    let mut seen_free_electives: HashSet<String> = HashSet::new();
 
     for (idx, parsed) in courses.iter().enumerate() {
         if !used_indices.contains(&idx) {
-            if !matches!(parsed.grade.as_str(), "F" | "W" | "U") {
+            if is_passing_grade(&parsed.grade) {
+                let dedupe_key = free_elective_dedupe_key(&parsed.code, &parsed.name);
+                if !seen_free_electives.insert(dedupe_key) {
+                    continue;
+                }
+
                 let credits = parsed.parsed_credit;
                 free_elective_credits += credits;
                 free_elective_list.push(format!(
                     "{} (Grade: {}, {} cr)",
                     parsed.code, parsed.grade, credits
                 ));
-                logging::log!(
-                    "[AUDIT] Free Elective: {} - Grade: {} - {} credits (from PDF)",
-                    parsed.code,
-                    parsed.grade,
-                    credits
-                );
             }
         }
     }
 
-    logging::log!("[AUDIT] Total Free Elective Credits: {}", free_elective_credits);
-
     (free_elective_credits, free_elective_list)
 }
-

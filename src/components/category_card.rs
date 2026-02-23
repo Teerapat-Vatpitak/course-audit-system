@@ -36,9 +36,9 @@ pub fn CategoryCard(category: Category) -> impl IntoView {
                             {format!("{:.0} / {:.0}", category.collected_credits, category.required_credits)}
                         </span>
                     </div>
-                    <div class={format!("w-7 h-7 rounded-full flex items-center justify-center transition-colors {}", if is_expanded.get() { "bg-blue-50 text-blue-600" } else { "bg-slate-50 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-500" })}>
+                    <div class={move || format!("w-7 h-7 rounded-full flex items-center justify-center transition-colors {}", if is_expanded.get() { "bg-blue-50 text-blue-600" } else { "bg-slate-50 text-slate-400 group-hover:bg-blue-50 group-hover:text-blue-500" })}>
                         <svg
-                            class={format!(
+                            class={move || format!(
                                 "w-4 h-4 transition-transform duration-200 {}",
                                 if is_expanded.get() { "rotate-180" } else { "" }
                             )}

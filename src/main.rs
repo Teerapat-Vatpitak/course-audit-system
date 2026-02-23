@@ -11,8 +11,9 @@
 //! - Greedy matching for repeatable courses
 //! - Responsive Leptos UI with collapsible category cards
 
-use leptos::{logging, *};
+use leptos::*;
 use leptos_meta::*;
+use std::collections::HashSet;
 use wasm_bindgen::{closure::Closure, JsCast, JsValue};
 use web_sys::{DragEvent, Event, HtmlInputElement};
 
@@ -27,7 +28,9 @@ use crate::logic::{
     auditor::{audit_gen_ed, audit_major, calculate_free_electives},
     parser::{extract_text_from_pdf, parse_transcript},
 };
-use crate::models::{AuditResult, Category, Course, MissingCourse};
+use crate::models::{
+    free_elective_dedupe_key, is_passing_grade, AuditResult, Category, Course, MissingCourse,
+};
 
 fn main() {
     console_error_panic_hook::set_once();
@@ -35,7 +38,7 @@ fn main() {
 }
 
 /// Main application component
-/// 
+///
 /// Manages state for file upload, PDF preview, audit results, and loading state.
 /// Implements drag-and-drop PDF upload with real-time PDF preview.
 #[component]
@@ -47,8 +50,9 @@ fn App() -> impl IntoView {
     let (preview_url, set_preview_url) = create_signal(Option::<String>::None);
     let (audit_result, set_audit_result) = create_signal(Option::<AuditResult>::None);
     let (is_loading, set_is_loading) = create_signal(false);
+    let (error_msg, set_error_msg) = create_signal(Option::<String>::None);
 
-    /// Handle file selection from input field
+    // Handle file selection from input field
     let on_file_change = move |ev: Event| {
         let input = ev
             .target()
@@ -90,7 +94,7 @@ fn App() -> impl IntoView {
         }
     };
 
-    // Handle start analysis - Call backend server
+    // Handle start analysis
     let on_start_analysis = move |_| {
         if file_name.get().is_empty() {
             return;
@@ -98,6 +102,7 @@ fn App() -> impl IntoView {
 
         set_is_loading.set(true);
         set_audit_result.set(None);
+        set_error_msg.set(None);
 
         if let Ok(input) = web_sys::window()
             .ok_or(())
@@ -134,6 +139,9 @@ fn App() -> impl IntoView {
                                 }
                             });
                             reader.set_onload(Some(onload.as_ref().unchecked_ref()));
+                            // SAFETY: Closure::forget leaks memory but is the standard
+                            // wasm-bindgen pattern for one-shot callbacks. Each analysis
+                            // leaks a small, bounded amount — acceptable for this use case.
                             onload.forget();
 
                             let onerror = Closure::once(move |_event: web_sys::Event| {
@@ -142,12 +150,14 @@ fn App() -> impl IntoView {
                                     .unwrap();
                             });
                             reader.set_onerror(Some(onerror.as_ref().unchecked_ref()));
-                            onerror.forget();
+                            onerror.forget(); // See onload.forget() comment above
                         });
 
                         if reader.read_as_array_buffer(&file).is_err() {
                             set_is_loading.set(false);
-                            logging::error!("Failed to read file");
+                            set_error_msg.set(Some(
+                                "Failed to read the PDF file. Please try again.".to_string(),
+                            ));
                             return;
                         }
 
@@ -161,16 +171,7 @@ fn App() -> impl IntoView {
                                 match JsFuture::from(promise).await {
                                     Ok(text_value) => {
                                         if let Some(text) = text_value.as_string() {
-                                            logging::log!(
-                                                "[DEBUG] Extracted text length: {} characters",
-                                                text.len()
-                                            );
-
                                             let courses = parse_transcript(&text);
-                                            logging::log!(
-                                                "[DEBUG] Starting audit with {} courses",
-                                                courses.len()
-                                            );
 
                                             let gen_ed = get_gen_ed_curriculum();
                                             let major = get_major_curriculum();
@@ -187,25 +188,23 @@ fn App() -> impl IntoView {
                                             let mut all_used_courses = gen_ed_used.clone();
                                             all_used_courses.extend(major_used.clone());
 
-                                            let (free_elective_credits, free_elective_list) =
+                                            let (free_elective_credits, _free_elective_list) =
                                                 calculate_free_electives(
                                                     &courses,
                                                     &all_used_courses,
                                                 );
 
-                                            logging::log!(
-                                                "[AUDIT] Free Elective courses: {:?}",
-                                                free_elective_list
-                                            );
-
-                                            let mut all_missing: Vec<MissingCourse> = gen_ed_missing;
+                                            let mut all_missing: Vec<MissingCourse> =
+                                                gen_ed_missing;
                                             all_missing.extend(major_missing);
 
                                             // Drop missing entries for GenEd if total GenEd credits are already met.
                                             // DO NOT drop Major Core/Basic Science misses, as they are strictly required regardless of total accumulated elective credits.
                                             all_missing.retain(|m| match m.category.as_str() {
-                                                "General Education" => gen_ed_credits < 30.0,
-                                                _                   => true,
+                                                "General Education" => {
+                                                    gen_ed_credits < gen_ed.total_required_credits
+                                                }
+                                                _ => true,
                                             });
 
                                             let total_credits = gen_ed_credits
@@ -216,6 +215,8 @@ fn App() -> impl IntoView {
                                             let mut gen_ed_courses = Vec::new();
                                             let mut major_courses = Vec::new();
                                             let mut free_elective_courses = Vec::new();
+                                            let mut seen_free_electives: HashSet<String> =
+                                                HashSet::new();
 
                                             for (idx, parsed) in courses.iter().enumerate() {
                                                 let course = Course {
@@ -231,8 +232,14 @@ fn App() -> impl IntoView {
                                                     major_courses.push(course);
                                                 } else if all_used_courses.contains(&idx) {
                                                     major_courses.push(course);
-                                                } else {
-                                                    free_elective_courses.push(course);
+                                                } else if is_passing_grade(&parsed.grade) {
+                                                    let dedupe_key = free_elective_dedupe_key(
+                                                        &parsed.code,
+                                                        &parsed.name,
+                                                    );
+                                                    if seen_free_electives.insert(dedupe_key) {
+                                                        free_elective_courses.push(course);
+                                                    }
                                                 }
                                             }
 
@@ -241,13 +248,15 @@ fn App() -> impl IntoView {
                                                 categories: vec![
                                                     Category {
                                                         name: "General Education".to_string(),
-                                                        required_credits: 30.0,
+                                                        required_credits: gen_ed
+                                                            .total_required_credits,
                                                         collected_credits: gen_ed_credits,
                                                         courses: gen_ed_courses,
                                                     },
                                                     Category {
                                                         name: "Major Courses".to_string(),
-                                                        required_credits: 96.0,
+                                                        required_credits: major
+                                                            .total_required_credits,
                                                         collected_credits: major_credits
                                                             + elective_credits,
                                                         courses: major_courses,
@@ -266,18 +275,19 @@ fn App() -> impl IntoView {
                                             set_audit_result.set(Some(audit_result));
                                         } else {
                                             set_is_loading.set(false);
-                                            logging::error!("Failed to extract text from PDF");
+                                            set_error_msg.set(Some("Could not extract text from the PDF. Make sure it's a valid transcript.".to_string()));
                                         }
                                     }
-                                    Err(e) => {
+                                    Err(_e) => {
                                         set_is_loading.set(false);
-                                        logging::error!("PDF extraction failed: {:?}", e);
+                                        set_error_msg.set(Some("PDF extraction failed. The file may be corrupted or encrypted.".to_string()));
                                     }
                                 }
                             }
-                            Err(e) => {
+                            Err(_e) => {
                                 set_is_loading.set(false);
-                                logging::error!("Failed to read file: {:?}", e);
+                                set_error_msg
+                                    .set(Some("Failed to read the uploaded file.".to_string()));
                             }
                         }
                     });
@@ -337,7 +347,7 @@ fn App() -> impl IntoView {
                             <p class="text-[13px] text-slate-400 mt-1.5 font-medium">"or click to browse from your device"</p>
                         </label>
                     </div>
-                    
+
                     // Selected File Indicator
                     {move || (!file_name.get().is_empty()).then(|| view! {
                         <div class="flex items-center gap-3 bg-white px-4 py-3 rounded-xl border border-blue-100 shadow-sm ring-1 ring-blue-50/50 relative z-10 animate-fade-in-up shrink-0">
@@ -379,12 +389,12 @@ fn App() -> impl IntoView {
                             disabled={move || file_name.get().is_empty() || is_loading.get()}
                             on:click=on_start_analysis
                         >
-                        {move || if is_loading.get() { 
-                            view! { 
+                        {move || if is_loading.get() {
+                            view! {
                                 <svg class="animate-spin -ml-1 mr-2 h-5 w-5 text-current" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                "Analyzing Document..." 
-                            }.into_view() 
-                        } else { 
+                                "Analyzing Document..."
+                            }.into_view()
+                        } else {
                             view! {
                                 "Analyze Transcript"
                                 <svg class="w-5 h-5 ml-1 transform group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
@@ -405,6 +415,16 @@ fn App() -> impl IntoView {
                                         <div class="absolute inset-0 rounded-full border-4 border-[#002D62] border-t-transparent animate-spin ring-1 ring-white/50"></div>
                                     </div>
                                     <p class="text-[15px] font-medium text-slate-500 animate-pulse tracking-wide">"Analyzing your academic progress..."</p>
+                                </div>
+                            }.into_view()
+                        } else if let Some(err) = error_msg.get() {
+                            view! {
+                                <div class="flex flex-col items-center justify-center h-full gap-5 z-10 relative px-12 text-center">
+                                    <div class="w-16 h-16 rounded-full bg-rose-50 flex items-center justify-center">
+                                        <svg class="w-8 h-8 text-rose-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                                    </div>
+                                    <h3 class="text-xl font-bold text-slate-800">"Something went wrong"</h3>
+                                    <p class="text-[15px] text-slate-500 max-w-md leading-relaxed font-medium">{err}</p>
                                 </div>
                             }.into_view()
                         } else if let Some(result) = audit_result.get() {
@@ -498,13 +518,41 @@ fn App() -> impl IntoView {
                                                             let cat_courses: Vec<_> = result.missing_subjects.iter()
                                                                 .filter(|m| &m.category == cat)
                                                                 .collect();
+                                                            let display_items: Vec<String> = if cat == "General Education" {
+                                                                let mut ge_groups: Vec<String> = Vec::new();
+
+                                                                for m in &cat_courses {
+                                                                    let description = m.description.trim();
+                                                                    let group = if description.contains("missing") {
+                                                                        description.to_string()
+                                                                    } else {
+                                                                        description
+                                                                            .split(':')
+                                                                            .next()
+                                                                            .unwrap_or(description)
+                                                                            .trim()
+                                                                            .to_string()
+                                                                    };
+
+                                                                    if !ge_groups.contains(&group) {
+                                                                        ge_groups.push(group);
+                                                                    }
+                                                                }
+
+                                                                ge_groups
+                                                            } else {
+                                                                cat_courses
+                                                                    .iter()
+                                                                    .map(|m| m.description.clone())
+                                                                    .collect()
+                                                            };
                                                             let cat_label = cat.clone();
                                                             view! {
                                                                 <div>
                                                                     <p class="text-sm font-medium text-slate-700 mb-2">{cat_label}</p>
                                                                     <div class="bg-rose-50/50 rounded-lg border border-rose-100 divide-y divide-rose-100">
-                                                                        {cat_courses.iter().map(|m| {
-                                                                            let desc = m.description.clone();
+                                                                        {display_items.iter().map(|item| {
+                                                                            let desc = item.clone();
                                                                             view! {
                                                                                 <div class="px-4 py-3 flex items-start gap-3">
                                                                                     <div class="w-1.5 h-1.5 rounded-full bg-rose-400 mt-1.5 shrink-0"></div>

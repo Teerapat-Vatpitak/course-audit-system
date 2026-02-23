@@ -1,237 +1,82 @@
-# 🎓 Course Audit System (Rust + Leptos)
+# Course Audit System
 
-[![Rust](https://img.shields.io/badge/Rust-stable-brown?logo=rust)](https://www.rust-lang.org/)
-[![WebAssembly](https://img.shields.io/badge/WebAssembly-WASM-654ff0?logo=webassembly)](https://webassembly.org/)
-[![Leptos](https://img.shields.io/badge/Leptos-frontend-0ea5e9)](https://www.leptos.dev/)
-[![Privacy First](https://img.shields.io/badge/Privacy-First-success)](#privacy)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+Privacy-first WebAssembly app for auditing academic transcripts against PSU Computer Science curriculum. Upload PDF → Parse locally → Audit instantly.
 
-A client-side WebAssembly application for Computer Science students at Prince of Songkla University (PSU). Upload your transcript (PDF), parse it locally, and audit progress against curriculum requirements (GenEd, Major, Electives)—all in your browser.
+## Quick Start
 
-![Project Screenshot](path/to/screenshot.png)
+```bash
+# Prerequisites: Rust, Node.js, Trunk
+trunk serve --open    # Start dev server at http://localhost:8080
+trunk build --release # Production build → dist/
+```
 
----
+## Features
 
-## About
-
-Course Audit System is a privacy-first tool that evaluates academic progress with zero server dependencies. Built in Rust and compiled to WebAssembly via Leptos, it extracts course entries from transcripts using robust Regex, normalizes codes, and applies deterministic logic to check PSU curriculum requirements.
-
-- **Runs entirely in the browser** using WASM.
-- **No data leaves your device**; no server calls or storage.
-- **Clear, predictable auditing** rules based on static curriculum data.
-
----
-
-## Key Features
-
-- **PDF Parsing:** Extracts course data directly from transcript PDFs using Regex.
-- **Curriculum Audit:**
-  - General Education strands and sub-groups (including sequential pair constraints).
-  - Major requirements (Basic Science, Core, Capstone).
-  - Electives across domains and clusters.
-- **Intelligent Logic:**
-  - **Greedy matching** for repeatable courses (Special Topics like `344-496`) so multiple completions accumulate credits correctly.
-  - **Free Electives detection** for unmatched but passing courses, using the PDF's parsed credits.
-- **Responsive UI:**
-  - Fast, signal-based Leptos UI.
-  - Accordion-style category cards for clear, collapsible summaries.
-
----
-
-## Tech Stack
-
-- **Language:** Rust 🦀
-- **Framework:** Leptos (WebAssembly)
-- **Build Tool:** Trunk
-- **Styling:** Tailwind CSS
-- **PDF Engine:** PDF.js (via JavaScript interop)
-- **Interop:** wasm-bindgen, web-sys
-
----
+- **PDF Parsing**: Extracts course codes, names, credits, grades using Regex
+- **General Education Audit**: 7 strands + 6 electives (30 credits total)
+- **Major Audit**: Basic Science (12cr) + Core (56cr) + Capstone + Electives (12cr)
+- **Smart Matching**: Greedy matching for repeatable courses, code normalization, validation
+- **Free Electives**: Auto-detects unmatched passing courses
+- **100% Client-Side**: No servers, no data uploads
 
 ## Project Structure
 
-The project uses a modular architecture to separate concerns across data, logic, and UI.
-
-```text
+```
 src/
-├── models.rs          # Core data structures (Course, Category, AuditResult, curriculum types)
-├── data/
-│   ├── mod.rs         # Module declarations
-│   ├── gen_ed.rs      # Static General Education curriculum + get_gen_ed_curriculum()
-│   └── major.rs       # Static Major curriculum + get_major_curriculum()
-├── logic/
-│   ├── mod.rs         # Module declarations
-│   ├── parser.rs      # Transcript parsing + JS interop: extractTextFromPDF
-│   └── auditor.rs     # Auditing algorithms (GenEd/Major) + greedy matching + free electives
+├── main.rs              # UI, state, audit orchestration
+├── models.rs            # Data types
 ├── components/
-│   ├── mod.rs         # Module declarations
-│   └── category_card.rs # UI component for collapsible category cards
-└── main.rs            # App entry; wires data, logic, and UI together
+│   └── category_card.rs # Collapsible category cards
+├── data/
+│   ├── gen_ed.rs        # GenEd curriculum
+│   └── major.rs         # Major curriculum
+└── logic/
+    ├── parser.rs        # PDF → course data
+    └── auditor.rs       # Curriculum validation
 ```
 
-- **`src/models.rs`:** Core data structures shared across the app (e.g., `Course`, `Category`, `AuditResult`, `GenEdCurriculum`, `MajorCurriculum`).
-- **`src/data/`:** Static curriculum sources for GenEd and Major requirements.
-- **`src/logic/`:** Core business logic:
-  - PDF parsing (Regex), code normalization.
-  - Audit algorithms for GenEd/Major, including sub-groups, sequences, and elective domains.
-  - Greedy matching for repeatable "Special Topics" courses.
-- **`src/components/`:** Reusable UI widgets such as `CategoryCard`.
+## Curriculum Overview
 
----
+| Category  | Credits | Details                                                                   |
+| --------- | ------- | ------------------------------------------------------------------------- |
+| **GenEd** | 30      | 7 strands + sub-groups + sequential pairs + 6 electives                   |
+| **Major** | 96      | 12 Basic Science + 56 Core + 3-6 Capstone + 12 Electives (2 clusters min) |
 
-## Getting Started
+## How It Works
 
-### Prerequisites
+1. Upload PDF transcript → JavaScript PDF.js extracts text
+2. Rust regex parser normalizes and structures course data
+3. Audit engine matches courses to curriculum requirements
+4. UI displays progress, missing courses, and free electives
 
-```bash
-# Install Rust
-# Windows: https://win.rustup.rs/
-# macOS/Linux:
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-
-# Add WebAssembly target
-rustup target add wasm32-unknown-unknown
-
-# Install Trunk (WASM build tool)
-cargo install trunk
-```
-
-### Clone & Run
+## Build & Deploy
 
 ```bash
-git clone https://github.com/yourusername/course-audit-system.git
-cd course-audit-system
-
-# Install dependencies (Rust and Trunk must be installed)
-# Then start the dev server
+# Development
 trunk serve --open
-```
 
----
-
-## Deployment to GitHub Pages
-
-This project is configured to deploy automatically to GitHub Pages on every push to `main`:
-
-1. **Setup:**
-   - Repository must be public
-   - Enable GitHub Pages in repository settings → select "GitHub Actions" as source
-   - The `.github/workflows/deploy.yml` file handles the build and deploy
-
-2. **View Live:**
-   - Visit: `https://yourusername.github.io/course-audit-system/`
-
-3. **Manual Deployment:**
-   ```bash
-   trunk build --release
-   # Then manually push the dist/ folder to gh-pages branch
-   ```
-
----
-
-## Usage
-
-1. **Launch** the app (locally or visit the GitHub Pages link):
-   - Local: `trunk serve --open`
-   - GitHub Pages: Visit deployed URL
-
-2. **Upload** your transcript PDF:
-   - Drag-and-drop onto the upload area, or
-   - Click to browse and select the file
-
-3. **Review** results:
-   - Total credits earned
-   - Collapsible category cards for:
-     - **General Education**: Organized by 6 strands
-     - **Major Courses**: Organized by Basic Science, Core, Capstone, and Electives
-     - **Free Electives**: Unmatched passing courses
-   - Missing required courses to plan next steps
-   - Progress bars showing completion percentage for each category
-
----
-
-## Privacy & Security
-
-All processing is performed **locally in your browser** via WebAssembly:
-- ✅ **No servers involved** - Your transcript never touches any external server
-- ✅ **No data uploads** - Everything stays on your device
-- ✅ **No external storage** - No cookies or local storage of sensitive data
-- ✅ **Open source** - Code is auditable and transparent
-
-Your transcript PDF data never leaves your device.
-
----
-
-## Development
-
-### Project Organization
-
-- **`src/main.rs`** - App entry point, state management, and UI layout
-- **`src/models.rs`** - Core data structures (Course, Category, AuditResult, etc.)
-- **`src/components/`** - Leptos UI components (CategoryCard)
-- **`src/data/`** - Static curriculum definitions (GenEd, Major)
-- **`src/logic/`** - Business logic (PDF parser, auditor engine)
-- **`.github/workflows/`** - GitHub Actions for CI/CD and deployment
-
-### Running Tests
-
-```bash
-cargo test
-```
-
-### Building for Release
-
-```bash
+# Production
 trunk build --release
-# Output in dist/ directory (optimized WASM)
+# Push dist/ to GitHub Pages or static host
 ```
 
----
+Deploy automatically: `.github/workflows/deploy.yml` handles GitHub Actions build on push to main.
 
-## Roadmap
+## Privacy
 
-- [ ] Dark Mode and improved accessibility
-- [ ] Export audit results (JSON/CSV/PDF)
-- [ ] Configurable curriculum versions by year
-- [ ] Unit tests for parsing and auditing logic
-- [ ] i18n support (Thai/English UI)
-- [ ] Support for other departments/curricula
-- [ ] Course recommendations based on progress
+✅ All processing in browser (WASM)  
+✅ No servers, no uploads  
+✅ Transcript never leaves your device  
+✅ Open source, auditable code
 
----
+## Tech Stack
 
-## Contributing
+- **Rust** + **Leptos** (WASM frontend)
+- **Trunk** (build tool)
+- **Tailwind CSS** (styling)
+- **PDF.js** (text extraction)
+- **wasm-bindgen**, **web-sys** (JS interop)
 
-Contributions are welcome! To contribute:
+## License
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Areas for Contribution
-- Bug fixes and improvements to PDF parsing
-- Enhanced audit logic and edge case handling
-- UI/UX improvements
-- Documentation
-- Localization (Thai language support)
-
----
-
-## License & Credits
-
-- **License:** MIT. See `LICENSE`.
-- **Author:** Prince of Songkla University Computer Science Students
-- **Built with:**
-  - [Leptos](https://www.leptos.dev/) - Rust frontend framework
-  - [Trunk](https://trunkrs.dev/) - WASM build tool
-  - [Tailwind CSS](https://tailwindcss.com/) - Styling framework
-  - [PDF.js](https://mozilla.github.io/pdf.js/) - Client-side PDF text extraction
-  - [wasm-bindgen](https://rustwasm.org/docs/wasm-bindgen/) - Rust ↔ JavaScript interop
-  - [web-sys](https://rustwasm.org/docs/wasm-bindgen/reference/web-sys/) - Web APIs
-
----
-
-**Questions or Issues?** Please open an issue on GitHub!
+MIT
