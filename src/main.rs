@@ -51,6 +51,12 @@ fn App() -> impl IntoView {
     let (audit_result, set_audit_result) = create_signal(Option::<AuditResult>::None);
     let (is_loading, set_is_loading) = create_signal(false);
     let (error_msg, set_error_msg) = create_signal(Option::<String>::None);
+    // Stores the file from drag-and-drop (file input is not updated by drop events)
+    let (dropped_file, set_dropped_file) = create_signal(Option::<web_sys::File>::None);
+
+    // Language toggle: true = Thai (default), false = English
+    let (is_thai, set_is_thai) = create_signal(true);
+    provide_context(is_thai);
 
     // Handle file selection from input field
     let on_file_change = move |ev: Event| {
@@ -61,7 +67,12 @@ fn App() -> impl IntoView {
             if let Some(files) = input.files() {
                 if let Some(file) = files.get(0) {
                     set_file_name.set(file.name());
+                    set_dropped_file.set(None); // file input takes precedence; clear any prior drop
 
+                    // Revoke the previous blob URL to avoid memory leak, then create a new one
+                    if let Some(old_url) = preview_url.get() {
+                        let _ = web_sys::Url::revoke_object_url(&old_url);
+                    }
                     // Create blob URL for PDF preview display
                     if let Ok(url) = web_sys::Url::create_object_url_with_blob(&file) {
                         set_preview_url.set(Some(url));
@@ -83,8 +94,22 @@ fn App() -> impl IntoView {
         if let Some(data_transfer) = ev.data_transfer() {
             if let Some(files) = data_transfer.files() {
                 if let Some(file) = files.get(0) {
+                    if !file.name().to_lowercase().ends_with(".pdf") {
+                        set_error_msg.set(Some(if is_thai.get_untracked() {
+                            "กรุณาอัปโหลดไฟล์ PDF เท่านั้น".to_string()
+                        } else {
+                            "Please upload a PDF file.".to_string()
+                        }));
+                        return;
+                    }
+                    let file = web_sys::File::from(file);
                     set_file_name.set(file.name());
+                    set_dropped_file.set(Some(file.clone()));
 
+                    // Revoke the previous blob URL to avoid memory leak, then create a new one
+                    if let Some(old_url) = preview_url.get() {
+                        let _ = web_sys::Url::revoke_object_url(&old_url);
+                    }
                     // Create blob URL for PDF preview
                     if let Ok(url) = web_sys::Url::create_object_url_with_blob(&file) {
                         set_preview_url.set(Some(url));
@@ -104,22 +129,27 @@ fn App() -> impl IntoView {
         set_audit_result.set(None);
         set_error_msg.set(None);
 
-        if let Ok(input) = web_sys::window()
-            .ok_or(())
-            .and_then(|w| w.document().ok_or(()))
-            .and_then(|d| {
-                d.get_element_by_id("file-input")
-                    .ok_or(())
-                    .and_then(|e| e.dyn_into::<HtmlInputElement>().ok().ok_or(()))
-            })
-        {
-            if let Some(files) = input.files() {
-                if let Some(file) = files.get(0) {
-                    let file = web_sys::File::from(file);
+        // Prefer file from drag-and-drop signal; fall back to the file-input element.
+        // (drop events do not update the <input type="file"> files list)
+        let file_opt = dropped_file.get().or_else(|| {
+            web_sys::window()
+                .ok_or(())
+                .and_then(|w| w.document().ok_or(()))
+                .and_then(|d| {
+                    d.get_element_by_id("file-input")
+                        .ok_or(())
+                        .and_then(|e| e.dyn_into::<HtmlInputElement>().ok().ok_or(()))
+                })
+                .ok()
+                .and_then(|input| input.files())
+                .and_then(|files| files.get(0))
+                .map(web_sys::File::from)
+        });
 
-                    spawn_local(async move {
-                        use wasm_bindgen_futures::JsFuture;
-                        use web_sys::FileReader;
+        if let Some(file) = file_opt {
+            spawn_local(async move {
+                use wasm_bindgen_futures::JsFuture;
+                use web_sys::FileReader;
 
                         let reader = FileReader::new().unwrap();
 
@@ -155,9 +185,11 @@ fn App() -> impl IntoView {
 
                         if reader.read_as_array_buffer(&file).is_err() {
                             set_is_loading.set(false);
-                            set_error_msg.set(Some(
-                                "Failed to read the PDF file. Please try again.".to_string(),
-                            ));
+                            set_error_msg.set(Some(if is_thai.get_untracked() {
+                                "ไม่สามารถอ่านไฟล์ PDF ได้ กรุณาลองใหม่อีกครั้ง".to_string()
+                            } else {
+                                "Failed to read the PDF file. Please try again.".to_string()
+                            }));
                             return;
                         }
 
@@ -230,8 +262,6 @@ fn App() -> impl IntoView {
                                                     gen_ed_courses.push(course);
                                                 } else if major_used.contains(&idx) {
                                                     major_courses.push(course);
-                                                } else if all_used_courses.contains(&idx) {
-                                                    major_courses.push(course);
                                                 } else if is_passing_grade(&parsed.grade) {
                                                     let dedupe_key = free_elective_dedupe_key(
                                                         &parsed.code,
@@ -275,24 +305,34 @@ fn App() -> impl IntoView {
                                             set_audit_result.set(Some(audit_result));
                                         } else {
                                             set_is_loading.set(false);
-                                            set_error_msg.set(Some("Could not extract text from the PDF. Make sure it's a valid transcript.".to_string()));
+                                            set_error_msg.set(Some(if is_thai.get_untracked() {
+                                                "ไม่สามารถดึงข้อความจาก PDF กรุณาตรวจสอบว่าเป็นใบแสดงผลการเรียนที่ถูกต้อง".to_string()
+                                            } else {
+                                                "Could not extract text from the PDF. Make sure it's a valid transcript.".to_string()
+                                            }));
                                         }
                                     }
                                     Err(_e) => {
                                         set_is_loading.set(false);
-                                        set_error_msg.set(Some("PDF extraction failed. The file may be corrupted or encrypted.".to_string()));
+                                        set_error_msg.set(Some(if is_thai.get_untracked() {
+                                            "การดึงข้อมูล PDF ล้มเหลว ไฟล์อาจเสียหายหรือถูกเข้ารหัส".to_string()
+                                        } else {
+                                            "PDF extraction failed. The file may be corrupted or encrypted.".to_string()
+                                        }));
                                     }
                                 }
                             }
                             Err(_e) => {
                                 set_is_loading.set(false);
                                 set_error_msg
-                                    .set(Some("Failed to read the uploaded file.".to_string()));
+                                    .set(Some(if is_thai.get_untracked() {
+                                        "ไม่สามารถอ่านไฟล์ที่อัปโหลดได้".to_string()
+                                    } else {
+                                        "Failed to read the uploaded file.".to_string()
+                                    }));
                             }
                         }
                     });
-                }
-            }
         }
     };
 
@@ -314,9 +354,17 @@ fn App() -> impl IntoView {
                         <span class="text-[15px] font-semibold tracking-tight text-zinc-900">"Course Audit"</span>
                         <span class="hidden sm:inline text-xs font-medium text-zinc-400 bg-zinc-100 px-2 py-0.5 rounded-md">"CS · PSU"</span>
                     </div>
-                    <div class="flex items-center gap-2 text-xs text-zinc-400">
-                        <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot"></div>
-                        <span class="hidden sm:inline font-medium">"100% client-side"</span>
+                    <div class="flex items-center gap-3">
+                        <button
+                            class="text-xs font-semibold px-2.5 py-1 rounded-lg bg-zinc-100 hover:bg-zinc-200 text-zinc-600 transition-colors"
+                            on:click=move |_| set_is_thai.update(|v| *v = !*v)
+                        >
+                            {move || if is_thai.get() { "EN" } else { "ไทย" }}
+                        </button>
+                        <div class="flex items-center gap-2 text-xs text-zinc-400">
+                            <div class="w-1.5 h-1.5 rounded-full bg-emerald-400 pulse-dot"></div>
+                            <span class="hidden sm:inline font-medium">{move || if is_thai.get() { "100% ประมวลผลบนเครื่อง" } else { "100% client-side" }}</span>
+                        </div>
                     </div>
                 </div>
             </header>
@@ -330,8 +378,8 @@ fn App() -> impl IntoView {
                     // Upload Card
                     <div class="bg-white rounded-2xl border border-zinc-200/80 shadow-soft p-5 flex flex-col gap-4">
                         <div>
-                            <h2 class="text-base font-semibold text-zinc-900 tracking-tight">"Upload Transcript"</h2>
-                            <p class="text-[13px] text-zinc-500 mt-0.5 leading-relaxed">"Your PDF is processed entirely in the browser. Nothing leaves your device."</p>
+                            <h2 class="text-base font-semibold text-zinc-900 tracking-tight">{move || if is_thai.get() { "อัปโหลดใบแสดงผลการเรียน" } else { "Upload Transcript" }}</h2>
+                            <p class="text-[13px] text-zinc-500 mt-0.5 leading-relaxed">{move || if is_thai.get() { "PDF ของคุณถูกประมวลผลในเบราว์เซอร์ทั้งหมด ข้อมูลไม่ออกจากอุปกรณ์ของคุณ" } else { "Your PDF is processed entirely in the browser. Nothing leaves your device." }}</p>
                         </div>
 
                         // Drop zone
@@ -354,8 +402,8 @@ fn App() -> impl IntoView {
                                     </svg>
                                 </div>
                                 <div>
-                                    <p class="text-sm font-medium text-zinc-700 group-hover:text-brand-600 transition-colors">"Drop PDF here or click to browse"</p>
-                                    <p class="text-2xs text-zinc-400 mt-0.5">"Accepts .pdf files only"</p>
+                                    <p class="text-sm font-medium text-zinc-700 group-hover:text-brand-600 transition-colors">{move || if is_thai.get() { "วางไฟล์ PDF ที่นี่ หรือคลิกเพื่อเลือกไฟล์" } else { "Drop PDF here or click to browse" }}</p>
+                                    <p class="text-2xs text-zinc-400 mt-0.5">{move || if is_thai.get() { "รับเฉพาะไฟล์ .pdf เท่านั้น" } else { "Accepts .pdf files only" }}</p>
                                 </div>
                             </div>
                         </div>
@@ -379,11 +427,11 @@ fn App() -> impl IntoView {
                             {move || if is_loading.get() {
                                 view! {
                                     <svg class="animate-spin h-4 w-4 text-white/70" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/></svg>
-                                    <span>"Analyzing..."</span>
+                                    <span>{move || if is_thai.get() { "กำลังวิเคราะห์..." } else { "Analyzing..." }}</span>
                                 }.into_view()
                             } else {
                                 view! {
-                                    <span>"Analyze Transcript"</span>
+                                    <span>{move || if is_thai.get() { "วิเคราะห์ใบแสดงผลการเรียน" } else { "Analyze Transcript" }}</span>
                                     <svg class="w-4 h-4 opacity-50" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>
                                 }.into_view()
                             }}
@@ -393,19 +441,19 @@ fn App() -> impl IntoView {
                     // How it works card (only when no file selected)
                     {move || preview_url.get().is_none().then(|| view! {
                         <div class="bg-white rounded-2xl border border-zinc-200/80 shadow-soft p-5 animate-fade-in-up">
-                            <h3 class="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">"How it works"</h3>
+                            <h3 class="text-xs font-semibold text-zinc-500 uppercase tracking-widest mb-3">{move || if is_thai.get() { "วิธีการใช้งาน" } else { "How it works" }}</h3>
                             <div class="space-y-3">
                                 <div class="flex items-start gap-3">
                                     <div class="mt-0.5 w-5 h-5 shrink-0 rounded-full bg-zinc-900 text-white flex items-center justify-center text-2xs font-bold">"1"</div>
-                                    <p class="text-[13px] text-zinc-600 leading-relaxed">"Download your unofficial transcript PDF from SIS."</p>
+                                    <p class="text-[13px] text-zinc-600 leading-relaxed">{move || if is_thai.get() { "ดาวน์โหลดใบแสดงผลการเรียน PDF จากระบบ SIS" } else { "Download your unofficial transcript PDF from SIS." }}</p>
                                 </div>
                                 <div class="flex items-start gap-3">
                                     <div class="mt-0.5 w-5 h-5 shrink-0 rounded-full bg-zinc-900 text-white flex items-center justify-center text-2xs font-bold">"2"</div>
-                                    <p class="text-[13px] text-zinc-600 leading-relaxed">"Upload the PDF using the drop zone above."</p>
+                                    <p class="text-[13px] text-zinc-600 leading-relaxed">{move || if is_thai.get() { "อัปโหลดไฟล์ PDF ผ่านพื้นที่วางไฟล์ด้านบน" } else { "Upload the PDF using the drop zone above." }}</p>
                                 </div>
                                 <div class="flex items-start gap-3">
                                     <div class="mt-0.5 w-5 h-5 shrink-0 rounded-full bg-zinc-900 text-white flex items-center justify-center text-2xs font-bold">"3"</div>
-                                    <p class="text-[13px] text-zinc-600 leading-relaxed">"Click Analyze — everything is processed locally for maximum privacy."</p>
+                                    <p class="text-[13px] text-zinc-600 leading-relaxed">{move || if is_thai.get() { "คลิก วิเคราะห์ — ทุกอย่างประมวลผลบนเครื่องของคุณเพื่อความเป็นส่วนตัวสูงสุด" } else { "Click Analyze — everything is processed locally for maximum privacy." }}</p>
                                 </div>
                             </div>
                         </div>
@@ -416,7 +464,7 @@ fn App() -> impl IntoView {
                         <svg class="w-4 h-4 text-zinc-400 shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z"/>
                         </svg>
-                        <p class="text-2xs text-zinc-500 font-medium">"Your transcript never leaves this device. All processing runs in WebAssembly."</p>
+                        <p class="text-2xs text-zinc-500 font-medium">{move || if is_thai.get() { "ใบแสดงผลการเรียนของคุณไม่ออกจากอุปกรณ์นี้ ทุกอย่างประมวลผลใน WebAssembly" } else { "Your transcript never leaves this device. All processing runs in WebAssembly." }}</p>
                     </div>
                 </aside>
 
@@ -432,8 +480,8 @@ fn App() -> impl IntoView {
                                         <div class="absolute inset-0 w-12 h-12 rounded-full border-2 border-brand-500 border-t-transparent animate-spin"></div>
                                     </div>
                                     <div class="text-center">
-                                        <p class="text-sm font-medium text-zinc-700">"Analyzing transcript..."</p>
-                                        <p class="text-xs text-zinc-400 mt-1">"Parsing courses and validating requirements"</p>
+                                        <p class="text-sm font-medium text-zinc-700">{move || if is_thai.get() { "กำลังวิเคราะห์ใบแสดงผลการเรียน..." } else { "Analyzing transcript..." }}</p>
+                                        <p class="text-xs text-zinc-400 mt-1">{move || if is_thai.get() { "กำลังดึงข้อมูลวิชาและตรวจสอบข้อกำหนด" } else { "Parsing courses and validating requirements" }}</p>
                                     </div>
                                 </div>
                             }.into_view()
@@ -447,7 +495,7 @@ fn App() -> impl IntoView {
                                         </svg>
                                     </div>
                                     <div>
-                                        <p class="text-sm font-semibold text-zinc-800">"Analysis Failed"</p>
+                                        <p class="text-sm font-semibold text-zinc-800">{move || if is_thai.get() { "การวิเคราะห์ล้มเหลว" } else { "Analysis Failed" }}</p>
                                         <p class="text-[13px] text-zinc-500 mt-1 max-w-sm leading-relaxed">{err}</p>
                                     </div>
                                 </div>
@@ -462,17 +510,17 @@ fn App() -> impl IntoView {
                                         <div class="absolute -right-16 -top-16 w-48 h-48 bg-brand-100/40 rounded-full blur-3xl pointer-events-none"></div>
                                         <div class="relative flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
                                             <div>
-                                                <p class="text-xs font-semibold text-brand-600 uppercase tracking-widest mb-1">"Total Progress"</p>
+                                                <p class="text-xs font-semibold text-brand-600 uppercase tracking-widest mb-1">{move || if is_thai.get() { "ความคืบหน้าทั้งหมด" } else { "Total Progress" }}</p>
                                                 <div class="flex items-baseline gap-2">
                                                     <span class="text-5xl sm:text-6xl font-extrabold tracking-tighter text-zinc-900 tabular-nums">
                                                         {result.total_credits as u32}
                                                     </span>
-                                                    <span class="text-base font-medium text-zinc-400">"credits earned"</span>
+                                                    <span class="text-base font-medium text-zinc-400">{move || if is_thai.get() { "หน่วยกิตที่ได้รับ" } else { "credits earned" }}</span>
                                                 </div>
                                             </div>
                                             <div class="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-50 rounded-lg px-3 py-1.5 self-start sm:self-auto">
                                                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4.26 10.147a60.436 60.436 0 00-.491 6.347A48.627 48.627 0 0112 20.904a48.627 48.627 0 018.232-4.41 60.46 60.46 0 00-.491-6.347"/></svg>
-                                                <span class="font-medium">"B.Sc. (Computer Science)"</span>
+                                                <span class="font-medium">{move || if is_thai.get() { "วท.บ. (วิทยาการคอมพิวเตอร์)" } else { "B.Sc. (Computer Science)" }}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -482,7 +530,19 @@ fn App() -> impl IntoView {
                                         {result.categories.iter().map(|cat| {
                                             let pct = ((cat.collected_credits / cat.required_credits) * 100.0).min(100.0);
                                             let complete = pct >= 100.0;
-                                            let cat_name = cat.name.clone();
+                                            let cat_name_str = cat.name.clone();
+                                            let cat_display = {
+                                                let cat_name_str = cat_name_str.clone();
+                                                move || {
+                                                    let is_thai = is_thai.get();
+                                                    match cat_name_str.as_str() {
+                                                        "General Education" if is_thai => "หมวดวิชาศึกษาทั่วไป".to_string(),
+                                                        "Major Courses" if is_thai => "หมวดวิชาเฉพาะ".to_string(),
+                                                        "Free Electives" if is_thai => "หมวดวิชาเลือกเสรี".to_string(),
+                                                        _ => cat_name_str.clone(),
+                                                    }
+                                                }
+                                            };
                                             let collected = cat.collected_credits;
                                             let required = cat.required_credits;
                                             let pct_display = pct as u32;
@@ -494,12 +554,16 @@ fn App() -> impl IntoView {
                                             let color_class = if complete { "text-emerald-500" } else { "text-brand-500" };
                                             let bg_class = if complete { "bg-emerald-50 border-emerald-100" } else { "bg-white border-zinc-200/80" };
                                             let badge_class = if complete { "bg-emerald-100 text-emerald-700" } else { "bg-brand-50 text-brand-600" };
-                                            let badge_text = if complete { "Complete" } else { "In Progress" };
+                                            let badge_text = move || if is_thai.get() {
+                                                if complete { "เสร็จสมบูรณ์" } else { "กำลังดำเนินการ" }
+                                            } else {
+                                                if complete { "Complete" } else { "In Progress" }
+                                            };
 
                                             view! {
                                                 <div class={format!("rounded-2xl border shadow-soft p-5 flex flex-col gap-4 transition-shadow hover:shadow-medium {}", bg_class)}>
                                                     <div class="flex items-start justify-between">
-                                                        <p class="text-sm font-semibold text-zinc-800">{cat_name}</p>
+                                                        <p class="text-sm font-semibold text-zinc-800">{cat_display}</p>
                                                         <span class={format!("text-2xs font-semibold px-2 py-0.5 rounded-full {}", badge_class)}>{badge_text}</span>
                                                     </div>
                                                     <div class="flex items-center gap-4">
@@ -522,7 +586,7 @@ fn App() -> impl IntoView {
                                                                 <span class="text-2xl font-bold text-zinc-900 tabular-nums">{collected as u32}</span>
                                                                 <span class="text-sm text-zinc-400 font-medium">{format!("/ {}", required as u32)}</span>
                                                             </div>
-                                                            <p class="text-2xs text-zinc-400 mt-0.5 font-medium">"credits"</p>
+                                                            <p class="text-2xs text-zinc-400 mt-0.5 font-medium">{move || if is_thai.get() { "หน่วยกิต" } else { "credits" }}</p>
                                                         </div>
                                                     </div>
                                                 </div>
@@ -534,7 +598,7 @@ fn App() -> impl IntoView {
                                     <div class="bg-white rounded-2xl border border-zinc-200/80 shadow-soft overflow-hidden">
                                         <div class="px-5 py-4 border-b border-zinc-100 flex items-center gap-2.5">
                                             <svg class="w-4 h-4 text-zinc-400" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z"/></svg>
-                                            <h3 class="text-sm font-semibold text-zinc-800">"Course Details"</h3>
+                                            <h3 class="text-sm font-semibold text-zinc-800">{move || if is_thai.get() { "รายละเอียดวิชา" } else { "Course Details" }}</h3>
                                         </div>
                                         <div class="divide-y divide-zinc-100">
                                             {result.categories.iter().map(|category| {
@@ -552,12 +616,13 @@ fn App() -> impl IntoView {
                                                 seen_cats.push(m.category.clone());
                                             }
                                         }
+                                        let missing_count = result.missing_subjects.len();
                                         view! {
                                             <div class="bg-white rounded-2xl border border-red-200/60 shadow-soft overflow-hidden">
                                                 <div class="px-5 py-4 border-b border-red-100 flex items-center gap-2.5 bg-red-50/50">
                                                     <svg class="w-4 h-4 text-red-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"/></svg>
-                                                    <h3 class="text-sm font-semibold text-red-800">"Missing Requirements"</h3>
-                                                    <span class="ml-auto text-2xs font-semibold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">{format!("{} items", result.missing_subjects.len())}</span>
+                                                    <h3 class="text-sm font-semibold text-red-800">{move || if is_thai.get() { "ข้อกำหนดที่ขาด" } else { "Missing Requirements" }}</h3>
+                                                    <span class="ml-auto text-2xs font-semibold text-red-600 bg-red-100 px-2 py-0.5 rounded-full">{move || if is_thai.get() { format!("{} รายการ", missing_count) } else { format!("{} items", missing_count) }}</span>
                                                 </div>
                                                 <div class="divide-y divide-red-100/60">
                                                     {seen_cats.iter().map(|cat| {
@@ -581,10 +646,21 @@ fn App() -> impl IntoView {
                                                         } else {
                                                             cat_courses.iter().map(|m| m.description.clone()).collect()
                                                         };
-                                                        let cat_label = cat.clone();
+                                                        let cat_display_name = {
+                                                            let name = cat.clone();
+                                                            move || {
+                                                                let is_thai = is_thai.get();
+                                                                match name.as_str() {
+                                                                    "General Education" if is_thai => "หมวดวิชาศึกษาทั่วไป".to_string(),
+                                                                    "Major Courses" if is_thai => "หมวดวิชาเฉพาะ".to_string(),
+                                                                    "Free Electives" if is_thai => "หมวดวิชาเลือกเสรี".to_string(),
+                                                                    _ => name.clone(),
+                                                                }
+                                                            }
+                                                        };
                                                         view! {
                                                             <div class="p-5">
-                                                                <p class="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2.5">{cat_label}</p>
+                                                                <p class="text-xs font-semibold text-zinc-700 uppercase tracking-wider mb-2.5">{cat_display_name}</p>
                                                                 <div class="space-y-1.5">
                                                                     {display_items.iter().map(|item| {
                                                                         let desc = item.clone();
@@ -615,8 +691,8 @@ fn App() -> impl IntoView {
                                         </svg>
                                     </div>
                                     <div>
-                                        <h3 class="text-base font-semibold text-zinc-800 mb-1">"No transcript uploaded"</h3>
-                                        <p class="text-sm text-zinc-400 max-w-xs leading-relaxed">"Upload your PDF transcript to see a breakdown of your progress toward graduation."</p>
+                                        <h3 class="text-base font-semibold text-zinc-800 mb-1">{move || if is_thai.get() { "ยังไม่ได้อัปโหลดใบแสดงผลการเรียน" } else { "No transcript uploaded" }}</h3>
+                                        <p class="text-sm text-zinc-400 max-w-xs leading-relaxed">{move || if is_thai.get() { "อัปโหลดใบแสดงผลการเรียน PDF เพื่อดูความคืบหน้าในการสำเร็จการศึกษา" } else { "Upload your PDF transcript to see a breakdown of your progress toward graduation." }}</p>
                                     </div>
                                 </div>
                             }.into_view()

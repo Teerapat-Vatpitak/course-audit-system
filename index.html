@@ -15,7 +15,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&family=JetBrains+Mono:wght@400;500;600&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800&family=JetBrains+Mono:wght@400;500;600&family=Prompt:wght@300;400;500;600;700&display=swap"
         rel="stylesheet">
     <link data-trunk rel="css" href="style.css" />
     <link data-trunk rel="tailwind-css" href="style.css" />
@@ -141,13 +141,15 @@
     </style>
 
     <!-- PDF.js Library -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" crossorigin="anonymous"
-        referrerpolicy="no-referrer"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"
+        integrity="sha512-q+4liFwdPC/bNdhUpZx6aXDx/h77yEQtn4I1slHydcbZK34nLaR3cAeYSJshoxIOq3mjEf7xJE8YWIUHMn+oCQ=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 </head>
 
 <body class="mesh-bg">
     <noscript>
-        <div style="text-align:center;padding:4rem;font-family:'Inter',sans-serif;color:#18181b;">
+        <div style="text-align:center;padding:4rem;font-family:'Inter','Prompt',sans-serif;color:#18181b;">
             <h1 style="font-size:1.5rem;font-weight:700;margin-bottom:0.5rem;">JavaScript Required</h1>
             <p style="color:#71717a;">This application requires JavaScript and WebAssembly to run.</p>
         </div>

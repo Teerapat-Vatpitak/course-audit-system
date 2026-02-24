@@ -40,7 +40,18 @@ pub fn CategoryCard(category: Category) -> impl IntoView {
                             <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
                         </svg>
                     </div>
-                    <span class="text-sm font-medium text-zinc-800 truncate">{&category.name}</span>
+                    <span class="text-sm font-medium text-zinc-800 truncate">{
+                        let name = category.name.clone();
+                        move || {
+                            let is_thai = use_context::<ReadSignal<bool>>().map(|s| s.get()).unwrap_or(false);
+                            match name.as_str() {
+                                "General Education" if is_thai => "หมวดวิชาศึกษาทั่วไป".to_string(),
+                                "Major Courses" if is_thai => "หมวดวิชาเฉพาะ".to_string(),
+                                "Free Electives" if is_thai => "หมวดวิชาเลือกเสรี".to_string(),
+                                _ => name.clone(),
+                            }
+                        }
+                    }</span>
                     {if complete {
                         view! {
                             <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
@@ -73,7 +84,10 @@ pub fn CategoryCard(category: Category) -> impl IntoView {
                             {if category_clone.courses.is_empty() {
                                 view! {
                                     <div class="px-5 py-6 text-center">
-                                        <p class="text-xs text-zinc-400 font-medium">"No courses completed in this category"</p>
+                                        <p class="text-xs text-zinc-400 font-medium">{move || {
+                                            let is_thai = use_context::<ReadSignal<bool>>().map(|s| s.get()).unwrap_or(false);
+                                            if is_thai { "ยังไม่มีวิชาที่เรียนสำเร็จในหมวดนี้" } else { "No courses completed in this category" }
+                                        }}</p>
                                     </div>
                                 }.into_view()
                             } else {
